@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-[assembly: AssemblyTitle("SQL Chat for SSMS")]
+[assembly: AssemblyTitle("SSMS Claude Chat")]
 [assembly: AssemblyDescription("Dockable chat window for SQL Server Management Studio")]
 [assembly: AssemblyCompany("Seth Business Solutions")]
 [assembly: AssemblyProduct("SsmsChatExtension")]

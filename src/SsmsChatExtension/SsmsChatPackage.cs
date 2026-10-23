@@ -10,11 +10,11 @@ using Task = System.Threading.Tasks.Task;
 namespace SsmsChatExtension
 {
     /// <summary>
-    /// Entry point of the extension. Registers the "SQL Chat" menu command (View menu)
+    /// Entry point of the extension. Registers the "SSMS Claude Chat" menu command (View menu)
     /// and the dockable chat tool window.
     /// </summary>
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-    [InstalledProductRegistration("SQL Chat for SSMS", "Dockable chat window for SQL Server Management Studio", "1.4.0")]
+    [InstalledProductRegistration("SSMS Claude Chat", "Dockable chat window for SQL Server Management Studio", "1.4.0")]
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideToolWindow(typeof(UI.ChatToolWindow), Style = VsDockStyle.Float, Width = 420, Height = 640)]
     [Guid(PackageGuids.SsmsChatString)]
@@ -51,7 +51,7 @@ namespace SsmsChatExtension
 
         protected override string GetToolWindowTitle(Type toolWindowType, int id)
         {
-            return toolWindowType == typeof(UI.ChatToolWindow) ? "SQL Chat" : base.GetToolWindowTitle(toolWindowType, id);
+            return toolWindowType == typeof(UI.ChatToolWindow) ? "SSMS Claude Chat" : base.GetToolWindowTitle(toolWindowType, id);
         }
 
         protected override System.Threading.Tasks.Task<object> InitializeToolWindowAsync(Type toolWindowType, int id, CancellationToken cancellationToken)

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Installs the "SQL Chat for SSMS" extension (.vsix) into SQL Server Management Studio 21 / 22.
+  Installs the "SSMS Claude Chat" extension (.vsix) into SQL Server Management Studio 21 / 22.
 
 .DESCRIPTION
   SSMS 21+ has no "Manage Extensions" dialog and double-clicking a .vsix opens the wrong installer,
@@ -79,7 +79,7 @@ try {
     }
 
     Write-Host ""
-    Write-Host "Done. Start SSMS and open View > SQL Chat." -ForegroundColor Green
+    Write-Host "Done. Start SSMS and open View > SSMS Claude Chat." -ForegroundColor Green
 }
 catch {
     Write-Host ""

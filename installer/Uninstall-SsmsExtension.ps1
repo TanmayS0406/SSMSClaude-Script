@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Removes the "SQL Chat for SSMS" extension from SQL Server Management Studio 21 / 22.
+  Removes the "SSMS Claude Chat" extension from SQL Server Management Studio 21 / 22.
 
 .PARAMETER SsmsPath
   Optional. Path to the SSMS "Common7\IDE" folder, or directly to its VSIXInstaller.exe.

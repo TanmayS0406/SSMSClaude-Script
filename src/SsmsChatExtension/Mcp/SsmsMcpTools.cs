@@ -107,7 +107,7 @@ namespace SsmsChatExtension.Mcp
                 Tool("execute_sql",
                     "Run T-SQL that may change the database (INSERT / UPDATE / DELETE, DDL such as CREATE or ALTER, EXEC of procedures) and commit it. "
                     + "GO batch separators are supported; batches run in order and stop at the first error. "
-                    + "Depending on the user's SQL Chat settings, the user must approve it in SSMS first, or database changes are turned off. "
+                    + "Depending on the user's SSMS Claude Chat settings, the user must approve it in SSMS first, or database changes are turned off. "
                     + "Use run_query for read-only exploration. Returns result sets and rows affected.",
                     new JObject
                     {
@@ -443,7 +443,7 @@ namespace SsmsChatExtension.Mcp
             if (mode == DatabaseChangeMode.Off)
             {
                 throw new InvalidOperationException(
-                    "Database changes are turned off in SQL Chat settings, so nothing was run. Use run_query for read-only queries, "
+                    "Database changes are turned off in SSMS Claude Chat settings, so nothing was run. Use run_query for read-only queries, "
                     + "or give the user the script (replace_query_window) and tell them they can enable changes under Settings.");
             }
             if (mode == DatabaseChangeMode.Allow) return;
@@ -466,7 +466,7 @@ namespace SsmsChatExtension.Mcp
             message.Append("Run it now? Changes are committed.");
 
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            var answer = VsShellUtilities.ShowMessageBox(ServiceProvider.GlobalProvider, message.ToString(), "SQL Chat - " + title,
+            var answer = VsShellUtilities.ShowMessageBox(ServiceProvider.GlobalProvider, message.ToString(), "SSMS Claude Chat - " + title,
                 OLEMSGICON.OLEMSGICON_WARNING, OLEMSGBUTTON.OLEMSGBUTTON_YESNO, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_SECOND);
             if (answer != IdYes)
             {
@@ -481,7 +481,7 @@ namespace SsmsChatExtension.Mcp
             {
                 throw new InvalidOperationException(
                     "No database connection: the user has no connected query window active in SSMS. "
-                    + "Ask them to open or click into a connected query window (or set a connection string in SQL Chat settings).");
+                    + "Ask them to open or click into a connected query window (or set a connection string in SSMS Claude Chat settings).");
             }
             return connection;
         }

@@ -10,7 +10,7 @@ namespace SsmsChatExtension.UI
     {
         public ChatToolWindow() : base(null)
         {
-            Caption = "SQL Chat";
+            Caption = "SSMS Claude Chat";
             BitmapImageMoniker = KnownMonikers.StatusInformation;
             Content = new ChatControl();
         }

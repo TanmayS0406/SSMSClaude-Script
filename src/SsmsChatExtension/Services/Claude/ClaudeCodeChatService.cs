@@ -24,7 +24,7 @@ namespace SsmsChatExtension.Services.Claude
 
         // Passed with --append-system-prompt-file, so it may contain any characters.
         private const string SystemPrompt =
-            "You are running inside SQL Server Management Studio (SSMS) through the SQL Chat extension, talking to a database developer. " +
+            "You are running inside SQL Server Management Studio (SSMS) through the SSMS Claude Chat extension, talking to a database developer. " +
             "Scope: you only help with SQL Server and databases - T-SQL queries, stored procedures, functions, views, triggers, schema and data modelling, " +
             "indexing and performance, execution plans, security and permissions, SSMS itself, and the SQL scripts in this repository. " +
             "If the user asks about anything else (general knowledge, other programming languages or topics, unrelated writing, personal advice), " +
@@ -71,7 +71,7 @@ namespace SsmsChatExtension.Services.Claude
             if (cliPath == null)
             {
                 throw new InvalidOperationException(
-                    "Claude Code CLI not found. Install it (https://claude.com/claude-code), or set its path in SQL Chat settings, then click Sign in.");
+                    "Claude Code CLI not found. Install it (https://claude.com/claude-code), or set its path in SSMS Claude Chat settings, then click Sign in.");
             }
 
             var prompt = BuildPrompt(request);
@@ -215,7 +215,7 @@ namespace SsmsChatExtension.Services.Claude
                         .ToList();
                     if (denials != null && denials.Count > 0)
                     {
-                        writer.Note("Not permitted in SQL Chat: " + string.Join("; ", denials));
+                        writer.Note("Not permitted in SSMS Claude Chat: " + string.Join("; ", denials));
                     }
 
                     if ((bool?)message["is_error"] == true)
@@ -373,7 +373,7 @@ namespace SsmsChatExtension.Services.Claude
             var lower = error.ToLowerInvariant();
             if (lower.Contains("login") || lower.Contains("api key") || lower.Contains("authenticat") || lower.Contains("oauth"))
             {
-                return error + Environment.NewLine + "Click \"Sign in with Claude\" at the top of the SQL Chat window.";
+                return error + Environment.NewLine + "Click \"Sign in with Claude\" at the top of the SSMS Claude Chat window.";
             }
             return error;
         }

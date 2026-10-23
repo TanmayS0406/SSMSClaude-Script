@@ -80,7 +80,7 @@ namespace SsmsChatExtension.Editor
             {
                 if (!dte.UndoContext.IsOpen)
                 {
-                    dte.UndoContext.Open("SQL Chat edit");
+                    dte.UndoContext.Open("SSMS Claude Chat edit");
                     openedUndo = true;
                 }
                 var start = textDocument.StartPoint.CreateEditPoint();

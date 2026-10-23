@@ -1,10 +1,10 @@
-# SQL Chat for SSMS
+# SSMS Claude Chat
 
 A dockable chat window for SQL Server Management Studio 21 / 22, powered by **Claude** through your own
 Claude account. Claude can understand the database you are connected to, run queries and (with your approval)
 changes against it, edit the SQL files in your repository, and rewrite, open or execute query windows in SSMS.
 
-Open it from **View > SQL Chat** in SSMS.
+Open it from **View > SSMS Claude Chat** in SSMS.
 
 Claude is instructed to stay on topic: SQL Server, T-SQL, stored procedures, schema design, performance, SSMS and
 the scripts in your repository. Other requests get a one-line polite refusal. (This is a system-prompt rule,
@@ -77,7 +77,7 @@ so treat it as a strong default rather than a security boundary.)
 ## How it works
 
 ```
-SQL Chat window ──stdin──▶ claude -p --output-format stream-json --resume <session>   (cwd = repository folder)
+SSMS Claude Chat window ──stdin──▶ claude -p --output-format stream-json --resume <session>   (cwd = repository folder)
        ▲                         │  built-in tools: Read / Edit / Write / Grep ... inside the repository
        └──── streamed reply ─────┤
                                  └─ MCP over http://127.0.0.1:<random port>/mcp  (random bearer token)
@@ -134,7 +134,7 @@ a VSIX; use Visual Studio or MSBuild.
 
 1. Close SSMS.
 2. Run `Install.cmd` from the `dist\SsmsChatExtension-Installer` folder (or `Install.cmd -Quiet` to skip the dialog).
-3. Start SSMS and open **View > SQL Chat**.
+3. Start SSMS and open **View > SSMS Claude Chat**.
 
 The script runs the `VSIXInstaller.exe` that ships with SSMS (double-clicking a `.vsix` does not work for SSMS 21+).
 Use `Uninstall.cmd` to remove it. If SSMS lives in a non-standard folder:
@@ -175,7 +175,7 @@ ChatServiceProvider.Current = new EchoChatService();
 - **"SSMS database tools unavailable"** or *No database connection*: click into a connected query window
   before sending, or set a connection string override.
 
-- **No "SQL Chat" in the View menu:** run `Ssms.exe /updateconfiguration` once from the SSMS `Common7\IDE`
+- **No "SSMS Claude Chat" in the View menu:** run `Ssms.exe /updateconfiguration` once from the SSMS `Common7\IDE`
   folder to rebuild the extension cache, then restart SSMS.
 - **Install fails:** open the newest `VSIXInstaller_*.log` in `%TEMP%`.
 - **Extension misbehaves after startup:** run `Ssms.exe /log` and check `%APPDATA%\Microsoft\SSMS\...\ActivityLog.xml`.

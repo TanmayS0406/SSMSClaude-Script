@@ -53,7 +53,7 @@ namespace SsmsChatExtension.Database
             if (!string.IsNullOrWhiteSpace(connectionStringOverride))
             {
                 var builder = new SqlConnectionStringBuilder(connectionStringOverride);
-                return new ActiveConnection(builder.DataSource, builder.InitialCatalog, "connection string from SQL Chat settings",
+                return new ActiveConnection(builder.DataSource, builder.InitialCatalog, "connection string from SSMS Claude Chat settings",
                     () => new SqlConnection(connectionStringOverride));
             }
 
@@ -123,7 +123,7 @@ namespace SsmsChatExtension.Database
             var builder = new SqlConnectionStringBuilder
             {
                 DataSource = server,
-                ApplicationName = "SQL Chat for SSMS",
+                ApplicationName = "SSMS Claude Chat",
                 Encrypt = true,
                 TrustServerCertificate = false
             };

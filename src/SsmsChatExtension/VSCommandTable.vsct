@@ -16,7 +16,7 @@
       <Button guid="SsmsChatCmdSet" id="ShowChatWindow" priority="0x0100" type="Button">
         <Parent guid="SsmsChatCmdSet" id="ChatMenuGroup" />
         <Strings>
-          <ButtonText>SQL Chat</ButtonText>
+          <ButtonText>SSMS Claude Chat</ButtonText>
         </Strings>
       </Button>
     </Buttons>
