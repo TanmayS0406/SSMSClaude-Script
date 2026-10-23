@@ -154,6 +154,22 @@ This restores NuGet packages, builds the VSIX and creates `dist\SsmsClaudeChat-S
 You can also open `SsmsChatExtension.sln` in Visual Studio and build it there. `dotnet build` cannot build
 a VSIX; use Visual Studio or MSBuild.
 
+## Code signing
+
+Microsoft Store (and SmartScreen) want the setup and every PE file in it signed. The workflow signs with
+[Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/) on pushes to `main`: the extension DLL
+right after compiling (so the copy inside the VSIX is signed), the setup and its uninstaller (through Inno Setup's
+`SignTool`), and then checks the setup's signature. It turns on once these repository variables are set:
+
+| Variable | Value |
+| --- | --- |
+| `ARTIFACT_SIGNING_PROFILE` | Certificate profile name in the signing account (signing is off while this is empty) |
+| `ARTIFACT_SIGNING_ACCOUNT` | Signing account name, default `Signs` |
+| `ARTIFACT_SIGNING_ENDPOINT` | Account endpoint, default `https://eus.codesigning.azure.net/` |
+| `AZURE_CLIENT_ID` | Entra app with a GitHub OIDC federated credential for `repo:TanmayS0406/SSMSClaude-Script:ref:refs/heads/main` and the *Artifact Signing Certificate Profile Signer* role on the signing account |
+
+Locally: `.\Build-Installer.ps1 -SignCommand '"...\signtool.exe" sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib "...\Azure.CodeSigning.Dlib.dll" /dmdf "...\metadata.json"'`.
+
 ## Releases
 
 `.github/workflows/build.yml` publishes a GitHub release on **every push to `main`**, so the download links above

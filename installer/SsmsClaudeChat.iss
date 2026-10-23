@@ -1,5 +1,5 @@
 ; Inno Setup script for the SSMS Claude Chat setup .exe. Build-Installer.ps1 compiles it with ISCC:
-;   ISCC.exe /DAppVersion=1.4.0 /DVsixPath=<path to .vsix> installer\SsmsClaudeChat.iss
+;   ISCC.exe /DAppVersion=1.4.0 /DVsixPath=<path to .vsix> [/DSign "/Ssigntool=..."] installer\SsmsClaudeChat.iss
 ;
 ; SSMS 21+ has no "Manage Extensions" dialog and double-clicking a .vsix opens the wrong installer, so setup
 ; runs the VSIXInstaller.exe that ships with SSMS. Command line extras:
@@ -40,6 +40,10 @@ WizardStyle=modern
 UninstallDisplayName=SSMS Claude Chat
 CloseApplications=no
 SetupLogging=yes
+#ifdef Sign
+; Build-Installer.ps1 -SignCommand defines the "signtool" command; it signs the setup and the uninstaller.
+SignTool=signtool
+#endif
 
 [Files]
 Source: "{#VsixPath}"; DestName: "SsmsChatExtension.vsix"; Flags: dontcopy

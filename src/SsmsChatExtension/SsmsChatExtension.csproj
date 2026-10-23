@@ -119,6 +119,10 @@
     </VSCTCompile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- Build-Installer.ps1 -SignCommand sets SIGN_COMMAND: sign the DLL right after compiling, so the copy in the VSIX is signed. -->
+  <Target Name="SignOutputAssembly" AfterTargets="CoreCompile" Condition="'$(SIGN_COMMAND)' != ''">
+    <Exec Command="$(SIGN_COMMAND) &quot;@(IntermediateAssembly->'%(FullPath)')&quot;" />
+  </Target>
   <!-- Packages the build output into the .vsix (and generates the .pkgdef). -->
   <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="'$(VSToolsPath)' != ''" />
 </Project>

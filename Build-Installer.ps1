@@ -8,17 +8,24 @@
   3. Restores NuGet packages and builds the Release VSIX.
   4. Compiles installer\SsmsClaudeChat.iss with Inno Setup into dist\SsmsClaudeChat-Setup-<version>.exe
      and copies the .vsix next to it.
+  With -SignCommand, also signs the extension DLL (before it goes into the VSIX), the setup and its uninstaller,
+  then checks the setup's signature.
 
 .PARAMETER Version
   Optional. Version to build, e.g. 1.5.0. Defaults to the version already in source.extension.vsixmanifest.
 
 .PARAMETER Configuration
   Build configuration. Default: Release.
+
+.PARAMETER SignCommand
+  Optional. A signtool command line without the file to sign, e.g.
+  "C:\...\signtool.exe" sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib "...\Azure.CodeSigning.Dlib.dll" /dmdf "...\metadata.json"
 #>
 [CmdletBinding()]
 param(
     [string]$Version,
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [string]$SignCommand
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,6 +80,8 @@ try {
     Write-Host "MSBuild : $msbuild"
     Write-Host "ISCC    : $iscc"
 
+    # The project signs its DLL after compiling when SIGN_COMMAND is set (see SignOutputAssembly in the .csproj).
+    $env:SIGN_COMMAND = $SignCommand
     & $msbuild (Join-Path $Root 'SsmsChatExtension.sln') /restore /t:Rebuild "/p:Configuration=$Configuration" /v:minimal /nologo
     if ($LASTEXITCODE -ne 0) { throw "Build failed (exit code $LASTEXITCODE)." }
 
@@ -83,10 +92,20 @@ try {
     if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
     New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
-    & $iscc /Q "/DAppVersion=$Version" "/DVsixPath=$vsix" (Join-Path $Root 'installer\SsmsClaudeChat.iss')
+    $isccArgs = @('/Q', "/DAppVersion=$Version", "/DVsixPath=$vsix")
+    if ($SignCommand) {
+        # Inno Setup runs this for the setup and its uninstaller; $q is a quote and $f the quoted file name.
+        $isccArgs += '/DSign', ('/Ssigntool=' + $SignCommand.Replace('"', '$q') + ' $f')
+    }
+    & $iscc @isccArgs (Join-Path $Root 'installer\SsmsClaudeChat.iss')
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed (exit code $LASTEXITCODE)." }
 
     $setup = Join-Path $dist "SsmsClaudeChat-Setup-$Version.exe"
+    if ($SignCommand) {
+        $signature = Get-AuthenticodeSignature -LiteralPath $setup
+        if ($signature.Status -ne 'Valid') { throw "The setup is not validly signed: $($signature.Status) $($signature.StatusMessage)" }
+        Write-Host "Signed by : $($signature.SignerCertificate.Subject)"
+    }
     Copy-Item -LiteralPath $vsix -Destination (Join-Path $dist "SsmsClaudeChat-$Version.vsix")
 
     Write-Host ""

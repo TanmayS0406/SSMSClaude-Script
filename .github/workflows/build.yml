@@ -13,7 +13,7 @@ on:
 
 permissions:
   contents: write
-  id-token: write   # OIDC sign-in to Azure for the blob upload
+  id-token: write   # OIDC sign-in to Azure for code signing (and the blob upload without a SAS)
 
 # Releases must not race each other for the same version number.
 concurrency:
@@ -53,10 +53,59 @@ jobs:
             choco install innosetup -y --no-progress
           }
 
+      # Signs in with GitHub OIDC as the Entra app in the AZURE_CLIENT_ID variable (federated credential for
+      # refs/heads/main). It needs "Artifact Signing Certificate Profile Signer" on the signing account to sign.
+      - name: Sign in to Azure
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AZURE_CLIENT_ID != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Code signing with Azure Artifact Signing, on while ARTIFACT_SIGNING_PROFILE (certificate profile name) is set.
+      # Microsoft Store requires the setup and every PE file in it to be signed.
+      - name: Set up code signing
+        id: signing
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AZURE_CLIENT_ID != '' && vars.ARTIFACT_SIGNING_PROFILE != ''
+        shell: pwsh
+        env:
+          ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT || 'https://eus.codesigning.azure.net/' }}
+          ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT || 'Signs' }}
+          PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'signing'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Invoke-WebRequest https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -OutFile "$dir\nuget.exe"
+          & "$dir\nuget.exe" install Microsoft.Windows.SDK.BuildTools -x -OutputDirectory $dir -Verbosity quiet
+          & "$dir\nuget.exe" install Microsoft.ArtifactSigning.Client -x -OutputDirectory $dir -Verbosity quiet
+          $signtool = Get-ChildItem $dir -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1
+          $dlib = Get-ChildItem $dir -Recurse -Filter Azure.CodeSigning.Dlib.dll | Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1
+          if (-not $signtool -or -not $dlib) { throw "signtool.exe or Azure.CodeSigning.Dlib.dll (x64) not found." }
+
+          # Authenticate with the az CLI session from azure/login only.
+          @{
+            Endpoint = $env:ENDPOINT; CodeSigningAccountName = $env:ACCOUNT; CertificateProfileName = $env:PROFILE
+            CorrelationId = "github-$env:GITHUB_RUN_ID"
+            ExcludeCredentials = @('EnvironmentCredential', 'ManagedIdentityCredential', 'WorkloadIdentityCredential',
+              'SharedTokenCacheCredential', 'VisualStudioCredential', 'VisualStudioCodeCredential',
+              'AzurePowerShellCredential', 'AzureDeveloperCliCredential', 'InteractiveBrowserCredential')
+          } | ConvertTo-Json | Set-Content "$dir\metadata.json" -Encoding utf8NoBOM
+
+          $command = "`"$($signtool.FullName)`" sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 " +
+                     "/dlib `"$($dlib.FullName)`" /dmdf `"$dir\metadata.json`""
+          "command=$command" >> $env:GITHUB_OUTPUT
+
       - name: Build extension and setup
         shell: pwsh
+        env:
+          SIGN: ${{ steps.signing.outputs.command }}
         run: |
-          .\Build-Installer.ps1 -Version ${{ steps.version.outputs.version }}
+          if ($env:SIGN) {
+            .\Build-Installer.ps1 -Version ${{ steps.version.outputs.version }} -SignCommand $env:SIGN
+          } else {
+            .\Build-Installer.ps1 -Version ${{ steps.version.outputs.version }}
+          }
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           # A fixed-name copy gives a permanent "latest" download link on GitHub and in blob storage.
           Copy-Item "dist\SsmsClaudeChat-Setup-${{ steps.version.outputs.version }}.exe" dist\SsmsClaudeChat-Setup.exe
@@ -79,19 +128,9 @@ jobs:
           gh release create "v$env:VERSION" @files --target $env:GITHUB_SHA --latest `
             --title "SSMS Claude Chat $env:VERSION" --generate-notes
 
-      # Blob upload auth, either of:
-      #  - secret AZURE_STORAGE_SAS_TOKEN: a SAS for the container with create/write rights, or
-      #  - variable AZURE_CLIENT_ID: an Entra app with a GitHub OIDC federated credential for refs/heads/main and
-      #    "Storage Blob Data Contributor" on the container (for accounts that disallow shared keys).
+      # Blob upload auth: the AZURE_STORAGE_SAS_TOKEN secret (a SAS for the container with create/write rights),
+      # or else the Azure sign-in above (Entra app with "Storage Blob Data Contributor" on the container).
       # Skipped while neither is set.
-      - name: Sign in to Azure
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.AZURE_STORAGE_SAS_TOKEN == '' && vars.AZURE_CLIENT_ID != ''
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
       - name: Upload to Azure Blob Storage
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && (env.AZURE_STORAGE_SAS_TOKEN != '' || vars.AZURE_CLIENT_ID != '')
         shell: pwsh
