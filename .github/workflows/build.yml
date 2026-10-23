@@ -103,7 +103,9 @@ jobs:
           # version.json lets the website show the current version without a redeploy.
           @{ version = $env:VERSION; file = "SsmsClaudeChat-Setup-$env:VERSION.exe"; published = (Get-Date).ToUniversalTime().ToString('o') } |
             ConvertTo-Json | Set-Content dist\version.json -Encoding utf8NoBOM
-          $auth = if ($env:AZURE_STORAGE_SAS_TOKEN) { @('--sas-token', $env:AZURE_STORAGE_SAS_TOKEN) } else { @('--auth-mode', 'login') }
+          # az reads AZURE_STORAGE_SAS_TOKEN from the environment; passing it as an argument would break on its '&'s
+          # (az.cmd goes through cmd.exe).
+          $auth = if ($env:AZURE_STORAGE_SAS_TOKEN) { @() } else { @('--auth-mode', 'login') }
           foreach ($file in Get-ChildItem dist\*.exe, dist\*.vsix, dist\version.json) {
             # Versioned files never change; the fixed-name ones are re-checked every 5 minutes.
             $versioned = $file.Name -match '\d+\.\d+\.\d+'
