@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Inno Setup
         shell: pwsh
@@ -35,7 +35,7 @@ jobs:
           }
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: SsmsClaudeChat
           path: |
