@@ -90,5 +90,11 @@ namespace SsmsChatExtension.Services
         /// or null when the user switched "include query" off / nothing is open.
         /// </summary>
         public string EditorContext { get; }
+
+        /// <summary>
+        /// Provider session to continue (null = new conversation). Services that keep server-side sessions,
+        /// such as Claude Code, update it after the reply so the chat history can resume it later.
+        /// </summary>
+        public string SessionId { get; set; }
     }
 }

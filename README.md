@@ -26,6 +26,10 @@ so treat it as a strong default rather than a security boundary.)
   calls `show_diagram`, which opens a Mermaid diagram in your browser with *Download SVG* and *Copy source*
   buttons. Pages are kept in `%LOCALAPPDATA%\SsmsChatExtension\diagrams`. Rendering loads Mermaid from
   cdn.jsdelivr.net, so it needs internet access (the source is always on the page).
+- **One-click database diagram**: the **DB diagram** button draws an ER diagram of the active query window's
+  database straight from the catalog (tables, PK / FK columns, foreign keys; no AI call, no tokens used).
+  Big databases are trimmed to 150 tables, and above 40 tables only key columns are shown. Claude can do the
+  same for a database or a single schema with `show_database_diagram`.
 - **Runs SQL for you**: `execute_sql` runs any script (INSERT / UPDATE / DELETE, CREATE / ALTER, EXEC, `GO`
   batches), commits it and gives Claude the results; `execute_query_window` presses F5 on the active query
   window so you see the results grid in SSMS. What happens depends on **Settings > Let Claude run SQL that
@@ -34,13 +38,22 @@ so treat it as a strong default rather than a security boundary.)
     nothing runs unless you click **Yes** (No is the default button).
   - *Off*: both tools refuse; Claude can still explore with `run_query` and put scripts in the editor.
   - *Allow without asking*: runs immediately. Only use this against development databases.
+- **Object Explorer stays current**: after `execute_sql` creates, alters, drops or renames objects, the database
+  node in Object Explorer and the IntelliSense cache are refreshed automatically (so new tables and procedures
+  appear without pressing F5 there). After `execute_query_window`, the refresh happens once the query finishes.
+  Claude can also call `refresh_object_explorer`. A database that is not expanded in Object Explorer simply
+  loads fresh when you open it.
 - **Edits your repository**: Claude works in the *repository folder* set in **Settings** and can create and edit
-  files there (turn "Let Claude create and edit files..." off to make it ask instead, which in this window means
-  the edit is refused). Read-only `git status/diff/log/show` are allowed; other shell commands are blocked.
+  files there. Read-only `git status/diff/log/show` are always allowed; what else Claude may do depends on
+  **Settings > Claude permissions** (see below).
 - **Edits SSMS query windows**: `get_query_window`, `replace_query_window` (one Ctrl+Z undoes it) and
   `open_new_query_window` (connected like the active window). These only change the text; running it is
   `execute_query_window` (above).
-- The conversation continues across messages (`--resume`); **Clear** starts a new Claude session.
+- **Chat history**: every conversation is saved (`%LOCALAPPDATA%\SsmsChatExtension\history`, one JSON file per
+  chat). **History** lists them; opening one shows its messages and continues the same Claude session
+  (`--resume`), so Claude still remembers it. **New chat** starts a fresh conversation; **Delete** removes one.
+- **Model and effort**: pick the model (`opus`, `sonnet`, `haiku`, `fable`, or type any model id) and the effort
+  level (`low` ... `max`) in Settings; the header shows what is active.
 - Tool activity shows in the reply as `› SSMS describe_object: dbo.Orders`, `› Edit: C:\repo\proc.sql`, and so on.
 - Still there: streaming replies, Stop, *Include selected / current query as context*, *Insert into query window*, Copy.
 
@@ -61,9 +74,9 @@ SQL Chat window ──stdin──▶ claude -p --output-format stream-json --res
                                         └─ "ssms" tools inside SSMS: database + query windows
 ```
 
-- Every message runs `claude -p` in the repository folder with `--permission-mode acceptEdits` (or `default`),
-  `--allowedTools mcp__ssms` plus read-only git, and an `--mcp-config` file that points to a small MCP server
-  hosted inside SSMS. That file lives in `%LOCALAPPDATA%\SsmsChatExtension\mcp-<pid>.json`; the token changes
+- Every message runs `claude -p` in the repository folder with the chosen `--permission-mode`, `--model` and
+  `--effort`, `--allowedTools mcp__ssms` plus read-only git, the extension's instructions via
+  `--append-system-prompt-file`, and an `--mcp-config` file that points to a small MCP server hosted inside SSMS. That file lives in `%LOCALAPPDATA%\SsmsChatExtension\mcp-<pid>.json`; the token changes
   every SSMS session.
 - Database tools use the connection of the active query window, created by SSMS itself (Windows, SQL and
   Microsoft Entra logins all work). If that is not possible, set a **connection string override** in Settings
@@ -83,9 +96,10 @@ SQL Chat window ──stdin──▶ claude -p --output-format stream-json --res
 | Setting | Meaning |
 | --- | --- |
 | Repository folder | Where Claude works and may edit files. Empty = a private scratch folder (`...\SsmsChatExtension\workspace`). |
-| Let Claude create and edit files | `acceptEdits` permission mode. Off = edits are refused. |
-| Let Claude run SQL that changes the database | Off / Ask me before each change (default) / Allow without asking. |
-| Model | Optional `--model` value, for example `sonnet` or `opus`. Empty = CLI default. |
+| Claude permissions | *Edit files in the repository folder* (`acceptEdits`, default) / *Auto mode* (`auto`: Claude Code's safety classifier approves actions, including shell commands, and blocks risky ones) / *Read-only* (`default`: anything that needs permission is refused). |
+| Let Claude run SQL that changes the database | Off / Ask me before each change (default) / Allow without asking. Applies in every Claude permission mode. |
+| Model | `--model`: `opus`, `sonnet`, `haiku`, `fable` or any model id. Empty = Claude Code's default. |
+| Effort | `--effort`: `low`, `medium`, `high`, `xhigh`, `max`. Empty = the model's default. Available levels depend on the model. |
 | Connection string override | Optional. Used for database tools instead of the active query window. |
 | Claude Code CLI path | Optional full path to `claude.exe` / `claude.cmd`. |
 
@@ -133,12 +147,13 @@ ChatServiceProvider.Current = new EchoChatService();
 | `src/SsmsChatExtension/VSCommandTable.vsct`, `PackageIds.cs` | Menu definition and the GUIDs / IDs it uses |
 | `src/SsmsChatExtension/source.extension.vsixmanifest` | VSIX identity and the SSMS install target |
 | `src/SsmsChatExtension/UI/` | WPF chat control, view model, tool window |
-| `src/SsmsChatExtension/Services/` | `IChatService`, the echo stub and the message models |
+| `src/SsmsChatExtension/Services/` | `IChatService`, the echo stub, the message models and the chat history store |
 | `src/SsmsChatExtension/Services/Claude/` | Claude Code CLI wrapper (sign-in, status), the chat service, settings |
 | `src/SsmsChatExtension/Mcp/` | Loopback MCP server and the `ssms` tools Claude calls |
 | `src/SsmsChatExtension/Database/` | Active query window connection (via SSMS internals), the read-only query runner and the `GO`-aware executor |
 | `src/SsmsChatExtension/Diagrams/` | Mermaid diagram pages opened by `show_diagram` |
-| `src/SsmsChatExtension/Editor/SsmsEditor.cs` | Reads / writes / opens query windows through DTE |
+| `src/SsmsChatExtension/Editor/SsmsEditor.cs` | Reads / writes / opens / executes query windows through DTE |
+| `src/SsmsChatExtension/Editor/SsmsObjectExplorer.cs` | Refreshes Object Explorer and the IntelliSense cache after schema changes |
 | `installer/` | Install / uninstall scripts |
 | `Build-Installer.ps1` | Builds and bundles the installer |
 

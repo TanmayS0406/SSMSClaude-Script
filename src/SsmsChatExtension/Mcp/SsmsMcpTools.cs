@@ -139,6 +139,20 @@ namespace SsmsChatExtension.Mcp
                     },
                     "title", "mermaid"),
 
+                Tool("show_database_diagram",
+                    "Build an ER diagram of a whole database (or one schema) from the catalog - tables, key columns and foreign keys - and open it in the user's browser. "
+                    + "Faster and more complete than writing the Mermaid yourself for whole-database diagrams.",
+                    new JObject
+                    {
+                        ["database"] = Str("Database name. Default: the connection's current database."),
+                        ["schema"] = Str("Only tables in this schema, for example dbo.")
+                    }),
+
+                Tool("refresh_object_explorer",
+                    "Refresh the database in SSMS Object Explorer and the IntelliSense cache so the user sees new or changed objects. "
+                    + "execute_sql already does this after schema changes; use it when objects changed another way.",
+                    new JObject { ["database"] = Str("Database name. Default: the connection's current database.") }),
+
                 Tool("get_query_window",
                     "Get the name, file path, full text and current selection of the active SSMS query window.",
                     new JObject()),
@@ -167,6 +181,8 @@ namespace SsmsChatExtension.Mcp
                 case "get_dependencies": return await GetDependenciesAsync(arguments);
                 case "run_query": return await RunQueryAsync(arguments);
                 case "show_diagram": return await ShowDiagramAsync(arguments);
+                case "show_database_diagram": return await ShowDatabaseDiagramAsync(arguments);
+                case "refresh_object_explorer": return await RefreshObjectExplorerAsync(arguments);
                 case "execute_sql": return await ExecuteSqlAsync(arguments);
                 case "execute_query_window": return await ExecuteQueryWindowAsync(arguments);
                 case "get_query_window": return await GetQueryWindowAsync();
@@ -334,7 +350,60 @@ namespace SsmsChatExtension.Mcp
             await RequireApprovalAsync("Claude wants to run SQL", connection, database, (string)arguments["reason"], sql);
 
             var maxRows = (int?)arguments["max_rows"] ?? ReadOnlySql.DefaultMaxRows;
-            return await WithConnectionAsync(connection, database, c => SqlExecutor.Run(c, sql, maxRows));
+            string databaseAfterRun = null;
+            var output = await WithConnectionAsync(connection, database, c =>
+            {
+                try
+                {
+                    return SqlExecutor.Run(c, sql, maxRows);
+                }
+                finally
+                {
+                    databaseAfterRun = SafeDatabaseName(c);
+                }
+            });
+
+            // Make new / altered objects visible in Object Explorer and IntelliSense right away.
+            if (SsmsObjectExplorer.ChangesSchema(sql))
+            {
+                output += Environment.NewLine + await SsmsObjectExplorer.RefreshAsync(connection.Server, databaseAfterRun ?? database ?? connection.Database);
+            }
+            return output;
+        }
+
+        private async Task<string> RefreshObjectExplorerAsync(JObject arguments)
+        {
+            var connection = await GetConnectionAsync();
+            var database = (string)arguments["database"];
+            return await SsmsObjectExplorer.RefreshAsync(connection.Server, string.IsNullOrWhiteSpace(database) ? connection.Database : database);
+        }
+
+        private async Task<string> ShowDatabaseDiagramAsync(JObject arguments)
+        {
+            var connection = await GetConnectionAsync();
+            var schema = (string)arguments["schema"];
+            var diagram = await WithConnectionAsync(connection, (string)arguments["database"], c =>
+            {
+                var built = SchemaDiagram.Build(c, schema);
+                return (built.Mermaid, built.Summary, Database: c.Database);
+            });
+
+            var title = diagram.Database + (string.IsNullOrWhiteSpace(schema) ? string.Empty : "." + schema.Trim()) + " ER diagram";
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var path = DiagramViewer.Show(title, diagram.Mermaid, diagram.Summary);
+            return "Opened the ER diagram in the user's browser: " + diagram.Summary + " Saved as " + path + ".";
+        }
+
+        private static string SafeDatabaseName(IDbConnection connection)
+        {
+            try
+            {
+                return connection.State == ConnectionState.Open ? connection.Database : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private async Task<string> ExecuteQueryWindowAsync(JObject arguments)
@@ -349,6 +418,10 @@ namespace SsmsChatExtension.Mcp
             await RequireApprovalAsync("Claude wants to execute " + snapshot.Name, connection, null, (string)arguments["reason"], script);
 
             if (!await SsmsEditor.ExecuteActiveQueryAsync()) throw new InvalidOperationException("No query window is open.");
+            if (SsmsObjectExplorer.ChangesSchema(script) && connection != null)
+            {
+                SsmsObjectExplorer.RefreshWhenQueryCompletes(connection.Server, connection.Database);
+            }
             return "Started executing " + (snapshot.SelectedText.Length > 0 ? "the selected text of " : string.Empty) + snapshot.Name
                    + " in SSMS. The user sees the results and messages there; ask them if you need to know the outcome.";
         }
@@ -403,7 +476,7 @@ namespace SsmsChatExtension.Mcp
             return connection;
         }
 
-        private static async Task<string> WithConnectionAsync(ActiveConnection connection, string database, Func<IDbConnection, string> work)
+        private static async Task<T> WithConnectionAsync<T>(ActiveConnection connection, string database, Func<IDbConnection, T> work)
         {
             // Database round-trips must not block the SSMS UI thread.
             await TaskScheduler.Default;

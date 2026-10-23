@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -23,7 +24,8 @@ namespace SsmsChatExtension.UI
 
         private string _claudePath;
         private string _repositoryFolder;
-        private bool _allowFileEdits;
+        private string _permissionMode;
+        private string _effort;
         private DatabaseChangeMode _databaseChanges;
         private string _model;
         private string _connectionString;
@@ -61,7 +63,32 @@ namespace SsmsChatExtension.UI
 
         public string ClaudePath { get { return _claudePath; } set { Set(ref _claudePath, value); } }
         public string RepositoryFolder { get { return _repositoryFolder; } set { Set(ref _repositoryFolder, value); } }
-        public bool AllowFileEdits { get { return _allowFileEdits; } set { Set(ref _allowFileEdits, value); } }
+        /// <summary>Model aliases offered in the model box; any other model id can be typed.</summary>
+        public IReadOnlyList<string> ModelOptions { get; } = new[] { string.Empty, "opus", "sonnet", "haiku", "fable" };
+
+        /// <summary>Effort levels for --effort; empty = the model's default.</summary>
+        public IReadOnlyList<string> EffortOptions { get; } = new[] { string.Empty, "low", "medium", "high", "xhigh", "max" };
+
+        public string Effort { get { return _effort; } set { Set(ref _effort, value ?? string.Empty); } }
+
+        public string PermissionMode
+        {
+            get { return _permissionMode; }
+            set
+            {
+                if (_permissionMode == value) return;
+                _permissionMode = value;
+                OnPropertyChanged(nameof(PermissionMode));
+                OnPropertyChanged(nameof(PermissionAcceptEdits));
+                OnPropertyChanged(nameof(PermissionAuto));
+                OnPropertyChanged(nameof(PermissionManual));
+            }
+        }
+
+        // One bool per radio button.
+        public bool PermissionAcceptEdits { get { return PermissionMode == "acceptEdits"; } set { if (value) PermissionMode = "acceptEdits"; } }
+        public bool PermissionAuto { get { return PermissionMode == "auto"; } set { if (value) PermissionMode = "auto"; } }
+        public bool PermissionManual { get { return PermissionMode == "default"; } set { if (value) PermissionMode = "default"; } }
 
         public DatabaseChangeMode DatabaseChanges
         {
@@ -200,7 +227,8 @@ namespace SsmsChatExtension.UI
             var settings = ClaudeSettings.Load();
             ClaudePath = settings.ClaudePath;
             RepositoryFolder = settings.RepositoryFolder;
-            AllowFileEdits = settings.AllowFileEdits;
+            PermissionMode = settings.EffectivePermissionMode;
+            Effort = settings.Effort;
             DatabaseChanges = settings.DatabaseChanges;
             Model = settings.Model;
             ConnectionString = settings.ConnectionStringOverride;
@@ -240,7 +268,9 @@ namespace SsmsChatExtension.UI
             var settings = ClaudeSettings.Load();
             settings.ClaudePath = path;
             settings.RepositoryFolder = folder;
-            settings.AllowFileEdits = AllowFileEdits;
+            settings.ClaudePermissionMode = PermissionMode;
+            settings.AllowFileEdits = PermissionMode != "default";
+            settings.Effort = (Effort ?? string.Empty).Trim();
             settings.DatabaseChanges = DatabaseChanges;
             settings.Model = (Model ?? string.Empty).Trim();
             settings.ConnectionStringOverride = connectionString;

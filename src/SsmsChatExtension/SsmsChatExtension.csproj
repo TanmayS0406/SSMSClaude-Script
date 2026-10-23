@@ -50,13 +50,16 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Database\ReadOnlySql.cs" />
+    <Compile Include="Database\SchemaDiagram.cs" />
     <Compile Include="Database\SqlExecutor.cs" />
     <Compile Include="Database\SsmsConnection.cs" />
     <Compile Include="Diagrams\DiagramViewer.cs" />
     <Compile Include="Editor\SsmsEditor.cs" />
+    <Compile Include="Editor\SsmsObjectExplorer.cs" />
     <Compile Include="Mcp\McpHttpServer.cs" />
     <Compile Include="Mcp\SsmsMcpTools.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\ChatHistory.cs" />
     <Compile Include="Services\ChatModels.cs" />
     <Compile Include="Services\Claude\ClaudeCli.cs" />
     <Compile Include="Services\Claude\ClaudeCodeChatService.cs" />

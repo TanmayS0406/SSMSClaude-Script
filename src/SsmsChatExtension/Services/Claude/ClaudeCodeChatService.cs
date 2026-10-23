@@ -22,7 +22,7 @@ namespace SsmsChatExtension.Services.Claude
     {
         private const string McpServerName = "ssms";
 
-        // Must not contain cmd.exe metacharacters (& | < > ^ %): it is passed on the command line, possibly through cmd.exe.
+        // Passed with --append-system-prompt-file, so it may contain any characters.
         private const string SystemPrompt =
             "You are running inside SQL Server Management Studio (SSMS) through the SQL Chat extension, talking to a database developer. " +
             "Scope: you only help with SQL Server and databases - T-SQL queries, stored procedures, functions, views, triggers, schema and data modelling, " +
@@ -34,6 +34,7 @@ namespace SsmsChatExtension.Services.Claude
             "Never guess table, column or procedure names - look them up first. Use run_query (read-only) to explore. " +
             "When the user asks you to run, apply or fix something in the database, use execute_sql; to run the script in their query window so they see the results grid, use execute_query_window. " +
             "These may need the user's approval or be turned off; if a call is declined or refused, do not retry it - explain and offer the script instead. Only say the database changed after execute_sql succeeded. " +
+            "Object Explorer is refreshed automatically after execute_sql changes the schema; call refresh_object_explorer if objects changed some other way (for example inside a procedure you ran). " +
             "To change the editor text use get_query_window, replace_query_window or open_new_query_window. " +
             "Stored procedures: to explain one, read it with describe_object and get_dependencies first and walk through its logic, parameters and side effects. " +
             "To write or change one, use CREATE OR ALTER, follow the existing naming and style, show the script, and deploy it with execute_sql only when the user asks. " +
@@ -41,20 +42,24 @@ namespace SsmsChatExtension.Services.Claude
             "Diagrams: when the user asks for a flow diagram, ER diagram or other picture of database objects, write Mermaid syntax and call show_diagram, which opens it in their browser. " +
             "Use flowchart TD for procedure logic (decisions as diamond nodes, one node per main step), erDiagram for tables and foreign keys, sequenceDiagram for procedure call chains. " +
             "Base diagrams on the real definitions you looked up, keep labels short and wrap labels with special characters in double quotes. " +
+            "For an ER diagram of a whole database or schema, call show_database_diagram, which builds it from the catalog. " +
             "Put T-SQL you suggest in sql code blocks. Be concise.";
 
         private static readonly object ServerLock = new object();
         private static McpHttpServer _mcpServer;
         private static string _mcpConfigPath;
-
-        private string _sessionId;
+        private static string _systemPromptPath;
 
         public string Name
         {
             get
             {
-                var model = ClaudeSettings.Load().Model;
-                return "Claude" + (string.IsNullOrWhiteSpace(model) ? string.Empty : " (" + model.Trim() + ")");
+                var settings = ClaudeSettings.Load();
+                var details = new List<string>();
+                if (!string.IsNullOrWhiteSpace(settings.Model)) details.Add(settings.Model.Trim());
+                if (!string.IsNullOrWhiteSpace(settings.Effort)) details.Add(settings.Effort.Trim() + " effort");
+                if (settings.EffectivePermissionMode == "auto") details.Add("auto mode");
+                return "Claude" + (details.Count == 0 ? string.Empty : " (" + string.Join(", ", details) + ")");
             }
         }
 
@@ -68,17 +73,15 @@ namespace SsmsChatExtension.Services.Claude
                     "Claude Code CLI not found. Install it (https://claude.com/claude-code), or set its path in SQL Chat settings, then click Sign in.");
             }
 
-            // A cleared chat (only one user message) starts a new Claude session.
-            if (request.Turns.Count(t => t.Role == ChatRole.User) <= 1) _sessionId = null;
-
             var prompt = BuildPrompt(request);
             var writer = new ReplyWriter(onToken);
 
-            var outcome = await RunOnceAsync(cliPath, settings, prompt, _sessionId, writer, cancellationToken).ConfigureAwait(false);
+            var outcome = await RunOnceAsync(cliPath, settings, prompt, request, writer, cancellationToken).ConfigureAwait(false);
             if (outcome == RunOutcome.SessionMissing)
             {
-                _sessionId = null;
-                await RunOnceAsync(cliPath, settings, prompt, null, writer, cancellationToken).ConfigureAwait(false);
+                // The saved session no longer exists (for example Claude Code data was cleared): start a new one.
+                request.SessionId = null;
+                await RunOnceAsync(cliPath, settings, prompt, request, writer, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -88,9 +91,10 @@ namespace SsmsChatExtension.Services.Claude
             SessionMissing
         }
 
-        private async Task<RunOutcome> RunOnceAsync(string cliPath, ClaudeSettings settings, string prompt, string resumeSessionId,
+        private async Task<RunOutcome> RunOnceAsync(string cliPath, ClaudeSettings settings, string prompt, ChatRequest request,
                                                     ReplyWriter writer, CancellationToken cancellationToken)
         {
+            var resumeSessionId = request.SessionId;
             var workingDirectory = ResolveWorkingDirectory(settings);
             var info = ClaudeCli.CreateStartInfo(cliPath, BuildArguments(settings, resumeSessionId), workingDirectory);
 
@@ -124,7 +128,7 @@ namespace SsmsChatExtension.Services.Claude
                             continue; // not a stream-json line
                         }
 
-                        if (HandleMessage(message, writer, ref resultError))
+                        if (HandleMessage(message, request, writer, ref resultError))
                         {
                             gotResult = true;
                         }
@@ -154,14 +158,14 @@ namespace SsmsChatExtension.Services.Claude
         }
 
         /// <summary>Processes one stream-json message. Returns true for the final "result" message.</summary>
-        private bool HandleMessage(JObject message, ReplyWriter writer, ref string resultError)
+        private static bool HandleMessage(JObject message, ChatRequest request, ReplyWriter writer, ref string resultError)
         {
             switch ((string)message["type"])
             {
                 case "system":
                     if ((string)message["subtype"] == "init")
                     {
-                        _sessionId = (string)message["session_id"] ?? _sessionId;
+                        request.SessionId = (string)message["session_id"] ?? request.SessionId;
                         var ssms = (message["mcp_servers"] as JArray)?.OfType<JObject>()
                             .FirstOrDefault(s => (string)s["name"] == McpServerName);
                         var status = (string)ssms?["status"];
@@ -202,7 +206,7 @@ namespace SsmsChatExtension.Services.Claude
                     return false;
 
                 case "result":
-                    _sessionId = (string)message["session_id"] ?? _sessionId;
+                    request.SessionId = (string)message["session_id"] ?? request.SessionId;
 
                     var denials = (message["permission_denials"] as JArray)?.OfType<JObject>()
                         .Select(d => DescribeToolUse((string)d["tool_name"], d["tool_input"] as JObject))
@@ -234,16 +238,21 @@ namespace SsmsChatExtension.Services.Claude
                 "--verbose",
                 "--include-partial-messages",
                 "--mcp-config", EnsureMcpServer(),
-                "--append-system-prompt", SystemPrompt,
-                // Read-only git commands are handy for "what changed in the repo"; everything else stays blocked.
-                "--allowedTools", "mcp__" + McpServerName, "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
-                "--permission-mode", settings.AllowFileEdits ? "acceptEdits" : "default"
+                "--append-system-prompt-file", EnsureSystemPromptFile(),
+                // Read-only git commands are handy for "what changed in the repo"; in auto mode Claude Code decides the rest.
+                "--allowedTools", "mcp__" + McpServerName, "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)", "Bash(git show *)",
+                "--permission-mode", settings.EffectivePermissionMode
             };
 
             if (!string.IsNullOrWhiteSpace(settings.Model))
             {
                 args.Add("--model");
                 args.Add(settings.Model.Trim());
+            }
+            if (!string.IsNullOrWhiteSpace(settings.Effort))
+            {
+                args.Add("--effort");
+                args.Add(settings.Effort.Trim().ToLowerInvariant());
             }
             if (resumeSessionId != null)
             {
@@ -310,6 +319,22 @@ namespace SsmsChatExtension.Services.Claude
 
                 _mcpServer = server;
                 _mcpConfigPath = path;
+                return path;
+            }
+        }
+
+        /// <summary>Writes the system prompt once per SSMS process and returns its path.</summary>
+        private static string EnsureSystemPromptFile()
+        {
+            lock (ServerLock)
+            {
+                if (_systemPromptPath != null && File.Exists(_systemPromptPath)) return _systemPromptPath;
+
+                var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SsmsChatExtension");
+                Directory.CreateDirectory(folder);
+                var path = Path.Combine(folder, "system-prompt.txt");
+                File.WriteAllText(path, SystemPrompt, new UTF8Encoding(false));
+                _systemPromptPath = path;
                 return path;
             }
         }
