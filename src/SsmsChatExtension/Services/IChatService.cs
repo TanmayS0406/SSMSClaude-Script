@@ -25,7 +25,7 @@ namespace SsmsChatExtension.Services
     /// <summary>Single place that decides which <see cref="IChatService"/> the window uses.</summary>
     public static class ChatServiceProvider
     {
-        private static IChatService _current = new EchoChatService();
+        private static IChatService _current = new Claude.ClaudeCodeChatService();
 
         public static IChatService Current
         {

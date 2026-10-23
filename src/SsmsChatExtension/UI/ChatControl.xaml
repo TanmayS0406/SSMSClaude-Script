@@ -142,12 +142,94 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="False">
-            <Button DockPanel.Dock="Right" Content="Clear" Style="{StaticResource ChatButton}" Margin="0"
-                    Command="{Binding ClearCommand}" />
-            <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Opacity="0.7" FontSize="11"
-                       Text="{Binding ServiceName, StringFormat=Model: {0}}" />
-        </DockPanel>
+        <StackPanel Grid.Row="0" Margin="0,0,0,8">
+            <DockPanel LastChildFill="False">
+                <Button DockPanel.Dock="Right" Content="Clear" Style="{StaticResource ChatButton}" Margin="0"
+                        Command="{Binding ClearCommand}" />
+                <Button DockPanel.Dock="Right" Content="Settings" Style="{StaticResource ChatButton}"
+                        Command="{Binding Account.ToggleSettingsCommand}" />
+                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Opacity="0.7" FontSize="11"
+                           Text="{Binding ServiceName, StringFormat=Model: {0}}" />
+            </DockPanel>
+
+            <!-- Claude account -->
+            <Grid Margin="0,6,0,0" DataContext="{Binding Account}">
+                <Border CornerRadius="3" Opacity="0.06"
+                        Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                <DockPanel Margin="8,5" LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Content="Sign in with Claude" Margin="6,0,0,0"
+                            Command="{Binding SignInCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                <Setter Property="Padding" Value="10,4" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSignedIn}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button DockPanel.Dock="Right" Content="Sign out" Margin="6,0,0,0" Command="{Binding SignOutCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource ChatButton}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSignedIn}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button DockPanel.Dock="Right" Content="Refresh" Style="{StaticResource ChatButton}" Margin="6,0,0,0"
+                            Command="{Binding RefreshCommand}" />
+                    <TextBlock VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap" Text="{Binding AccountText}" />
+                </DockPanel>
+            </Grid>
+
+            <!-- Settings -->
+            <Border Margin="0,6,0,0" Padding="8" CornerRadius="3" BorderThickness="1"
+                    DataContext="{Binding Account}"
+                    BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
+                    Visibility="{Binding IsSettingsOpen, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock FontSize="11" Opacity="0.75" Text="Repository folder (Claude can read and edit files here)" />
+                    <DockPanel Margin="0,3,0,0">
+                        <Button DockPanel.Dock="Right" Content="Open" Style="{StaticResource ChatButton}" Margin="6,0,0,0"
+                                Command="{Binding OpenRepositoryCommand}" />
+                        <Button DockPanel.Dock="Right" Content="Browse..." Style="{StaticResource ChatButton}" Margin="6,0,0,0"
+                                Command="{Binding BrowseRepositoryCommand}" />
+                        <TextBox Style="{StaticResource InputBox}" Padding="4"
+                                 Text="{Binding RepositoryFolder, UpdateSourceTrigger=PropertyChanged}" />
+                    </DockPanel>
+
+                    <CheckBox Margin="0,6,0,0" Content="Let Claude create and edit files in the repository folder without asking"
+                              IsChecked="{Binding AllowFileEdits}"
+                              Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+
+                    <TextBlock Margin="0,8,0,0" FontSize="11" Opacity="0.75" Text="Model (optional, e.g. sonnet or opus)" />
+                    <TextBox Margin="0,3,0,0" Style="{StaticResource InputBox}" Padding="4"
+                             Text="{Binding Model, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Margin="0,8,0,0" FontSize="11" Opacity="0.75" TextWrapping="Wrap"
+                               Text="Connection string override (optional; empty = use the active query window's connection)" />
+                    <TextBox Margin="0,3,0,0" Style="{StaticResource InputBox}" Padding="4"
+                             Text="{Binding ConnectionString, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Margin="0,8,0,0" FontSize="11" Opacity="0.75" Text="Claude Code CLI path (optional; empty = find automatically)" />
+                    <TextBox Margin="0,3,0,0" Style="{StaticResource InputBox}" Padding="4"
+                             Text="{Binding ClaudePath, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <DockPanel Margin="0,8,0,0" LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="Save" Style="{StaticResource PrimaryButton}" Padding="12,4"
+                                Command="{Binding SaveSettingsCommand}" />
+                        <TextBlock VerticalAlignment="Center" FontSize="11" Opacity="0.75" TextWrapping="Wrap"
+                                   Text="{Binding SettingsStatus}" />
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
 
         <!-- Messages -->
         <Grid Grid.Row="1">

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
@@ -50,10 +51,109 @@ namespace SsmsChatExtension.Editor
             return true;
         }
 
+        /// <summary>Name, path, full text and selection of the active query window, or null when none is open.</summary>
+        public static async Task<EditorSnapshot> GetActiveDocumentAsync()
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            var dte = await GetDteAsync();
+            var document = dte?.ActiveDocument;
+            var textDocument = document?.Object("TextDocument") as TextDocument;
+            if (textDocument == null) return null;
+
+            var text = textDocument.StartPoint.CreateEditPoint().GetText(textDocument.EndPoint);
+            var selection = document.Selection as TextSelection;
+            return new EditorSnapshot(document.Name, document.FullName, text, selection?.Text ?? string.Empty);
+        }
+
+        /// <summary>Replaces the whole text of the active query window as one undo step (Ctrl+Z reverts it).</summary>
+        public static async Task<bool> ReplaceAllTextAsync(string text)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            var dte = await GetDteAsync();
+            var textDocument = dte?.ActiveDocument?.Object("TextDocument") as TextDocument;
+            if (textDocument == null) return false;
+
+            var openedUndo = false;
+            try
+            {
+                if (!dte.UndoContext.IsOpen)
+                {
+                    dte.UndoContext.Open("SQL Chat edit");
+                    openedUndo = true;
+                }
+                var start = textDocument.StartPoint.CreateEditPoint();
+                start.Delete(textDocument.EndPoint);
+                start.Insert(text ?? string.Empty);
+            }
+            finally
+            {
+                if (openedUndo) dte.UndoContext.Close();
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Opens a new query window, connected like the active one when possible, and fills it with <paramref name="text"/>.
+        /// </summary>
+        public static async Task<bool> OpenNewQueryAsync(string text)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            var opened = false;
+            try
+            {
+                var factory = Database.SsmsConnection.GetScriptFactory();
+                var connection = Database.SsmsConnection.GetActiveUIConnectionInfo();
+                var method = factory?.GetType().GetInterfaces()
+                    .SelectMany(i => i.GetMethods())
+                    .FirstOrDefault(m => m.Name == "CreateNewBlankScript"
+                                         && m.GetParameters().Length == (connection != null ? 3 : 1)
+                                         && (connection == null || m.GetParameters()[1].ParameterType.IsInstanceOfType(connection)));
+                if (method != null)
+                {
+                    var scriptType = Enum.Parse(method.GetParameters()[0].ParameterType, "Sql");
+                    method.Invoke(factory, connection != null ? new[] { scriptType, connection, null } : new[] { scriptType });
+                    opened = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("SsmsChat: CreateNewBlankScript failed: " + ex);
+            }
+
+            if (!opened)
+            {
+                var dte = await GetDteAsync();
+                if (dte == null) return false;
+                dte.ExecuteCommand("File.NewQuery");
+            }
+
+            return await ReplaceAllTextAsync(text);
+        }
+
         private static async Task<DTE2> GetDteAsync()
         {
             var service = await AsyncServiceProvider.GlobalProvider.GetServiceAsync(typeof(DTE));
             return service as DTE2;
         }
+    }
+
+    /// <summary>State of the active query window at one moment.</summary>
+    internal sealed class EditorSnapshot
+    {
+        public EditorSnapshot(string name, string path, string text, string selectedText)
+        {
+            Name = name;
+            Path = path;
+            Text = text ?? string.Empty;
+            SelectedText = selectedText ?? string.Empty;
+        }
+
+        public string Name { get; }
+        public string Path { get; }
+        public string Text { get; }
+        public string SelectedText { get; }
     }
 }

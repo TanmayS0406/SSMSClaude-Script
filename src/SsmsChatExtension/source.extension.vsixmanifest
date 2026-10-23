@@ -3,7 +3,7 @@
   <Metadata>
     <Identity Id="SsmsChatExtension.8CAA5A9A-15AF-420A-8646-04F08447673D" Version="1.0.0" Language="en-US" Publisher="Seth Business Solutions" />
     <DisplayName>SQL Chat for SSMS</DisplayName>
-    <Description xml:space="preserve">A dockable chat window for SQL Server Management Studio. Ships with an echo stub; plug in your own AI provider through IChatService.</Description>
+    <Description xml:space="preserve">A dockable Claude chat window for SQL Server Management Studio. Sign in with your Claude account; Claude can read your database (read-only), edit your SQL repository and update query windows.</Description>
   </Metadata>
   <Installation>
     <!-- Id and version range copied from the manifest of SSMS 22's own core extension. -->

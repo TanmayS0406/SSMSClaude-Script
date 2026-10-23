@@ -27,9 +27,10 @@ namespace SsmsChatExtension.UI
         private bool _includeEditorContext = true;
         private string _statusText = string.Empty;
 
-        public ChatViewModel(IChatService service)
+        public ChatViewModel(IChatService service, ClaudeAccountViewModel account)
         {
             _service = service;
+            Account = account;
             _dispatcher = Dispatcher.CurrentDispatcher;
 
             Messages = new ObservableCollection<ChatMessage>();
@@ -44,6 +45,15 @@ namespace SsmsChatExtension.UI
         public ObservableCollection<ChatMessage> Messages { get; }
 
         public string ServiceName { get { return _service.Name; } }
+
+        /// <summary>Claude sign-in and settings (header of the window).</summary>
+        public ClaudeAccountViewModel Account { get; }
+
+        /// <summary>Re-reads <see cref="ServiceName"/>, for example after the model setting changed.</summary>
+        public void RefreshServiceName()
+        {
+            OnPropertyChanged(nameof(ServiceName));
+        }
 
         public ICommand SendCommand { get; }
         public ICommand StopCommand { get; }
