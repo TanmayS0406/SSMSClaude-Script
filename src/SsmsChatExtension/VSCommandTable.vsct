@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h" />
+  <Extern href="vsshlids.h" />
+
+  <Commands package="SsmsChat">
+    <Groups>
+      <!-- A group of our own, hung directly off SSMS's View menu. -->
+      <Group guid="SsmsChatCmdSet" id="ChatMenuGroup" priority="0x0600">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_VIEW" />
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <Button guid="SsmsChatCmdSet" id="ShowChatWindow" priority="0x0100" type="Button">
+        <Parent guid="SsmsChatCmdSet" id="ChatMenuGroup" />
+        <Strings>
+          <ButtonText>SQL Chat</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="SsmsChat" value="{CD45CFA1-0DA4-44D0-9819-74F42F0E10EF}" />
+    <GuidSymbol name="SsmsChatCmdSet" value="{4DD2D69B-C79F-44AD-8AF6-64B0DDE24184}">
+      <IDSymbol name="ChatMenuGroup" value="0x1020" />
+      <IDSymbol name="ShowChatWindow" value="0x0100" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>
