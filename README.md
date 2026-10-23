@@ -118,8 +118,9 @@ which databases are which); the CLI picks it up automatically.
 
 ## Install into SSMS
 
-1. Download `SsmsClaudeChat-Setup-<version>.exe` from the
-   [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases).
+1. Download the latest setup:
+   **[SsmsClaudeChat-Setup.exe](https://github.com/TanmayS0406/SSMSClaude-Script/releases/latest/download/SsmsClaudeChat-Setup.exe)**
+   (older versions are on the [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)).
 2. Close SSMS and run the setup. It needs no admin rights.
 3. Start SSMS and open **View > SSMS Claude Chat**.
 
@@ -150,15 +151,14 @@ a VSIX; use Visual Studio or MSBuild.
 
 ## Releases
 
-`.github/workflows/build.yml` builds the setup on every push and pull request (download it from the run's
-*Artifacts*). To publish a release, push a version tag:
+`.github/workflows/build.yml` publishes a GitHub release on **every push to `main`**, so the download link above
+always gets the newest build. The version bumps automatically: the patch number of the newest `v*` tag goes up by
+one (1.4.0, 1.4.1, 1.4.2, ...) and is stamped into the VSIX manifest and assembly before building.
 
-```powershell
-git tag v1.5.0
-git push origin v1.5.0
-```
-
-The workflow stamps that version, builds, and creates the GitHub release with the setup `.exe` and `.vsix` attached.
+- **New minor/major version:** raise the version in `source.extension.vsixmanifest` (e.g. to `1.5.0`) and push;
+  that push releases exactly `1.5.0`, and later pushes continue from there.
+- **Specific version:** push a tag (`git tag v2.0.0`, `git push origin v2.0.0`).
+- Pull requests only build; the setup is under the run's *Artifacts*.
 
 ## Using a different AI provider
 

@@ -1,5 +1,7 @@
-# Builds the setup .exe on every push and pull request.
-# Pushing a tag like v1.5.0 also stamps that version and publishes a GitHub release with the .exe and .vsix.
+# Every push to main builds the setup .exe and publishes it as a new GitHub release, bumping the patch
+# version of the newest v* tag (1.4.0 -> 1.4.1 -> ...). To jump to a new major/minor, raise the version in
+# source.extension.vsixmanifest (e.g. 1.5.0); the next push releases exactly that.
+# Pushing a tag like v2.0.0 by hand releases that version. Pull requests only build.
 name: Build installer
 
 on:
@@ -12,11 +14,34 @@ on:
 permissions:
   contents: write
 
+# Releases must not race each other for the same version number.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Pick version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          } else {
+            $manifest = [version]([xml](Get-Content src\SsmsChatExtension\source.extension.vsixmanifest -Raw)).PackageManifest.Metadata.Identity.Version
+            $latest = git tag -l 'v*' | ForEach-Object { $_.TrimStart('v') -as [version] } | Where-Object { $_ } |
+                      Sort-Object -Descending | Select-Object -First 1
+            $next = if ($latest) { [version]::new($latest.Major, $latest.Minor, $latest.Build + 1) } else { $manifest }
+            $version = if ($manifest -gt $next) { $manifest } else { $next }
+          }
+          Write-Host "Version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Install Inno Setup
         shell: pwsh
@@ -28,25 +53,25 @@ jobs:
       - name: Build extension and setup
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            .\Build-Installer.ps1 -Version $env:GITHUB_REF_NAME.TrimStart('v')
-          } else {
-            .\Build-Installer.ps1
-          }
+          .\Build-Installer.ps1 -Version ${{ steps.version.outputs.version }}
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - uses: actions/upload-artifact@v5
         with:
-          name: SsmsClaudeChat
+          name: SsmsClaudeChat-${{ steps.version.outputs.version }}
           path: |
             dist/*.exe
             dist/*.vsix
 
       - name: Publish release
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          # A fixed-name copy keeps .../releases/latest/download/SsmsClaudeChat-Setup.exe pointing at the newest build.
+          Copy-Item "dist\SsmsClaudeChat-Setup-$env:VERSION.exe" dist\SsmsClaudeChat-Setup.exe
           $files = (Get-ChildItem dist\*.exe, dist\*.vsix).FullName
-          gh release create $env:GITHUB_REF_NAME @files --title "SSMS Claude Chat $env:GITHUB_REF_NAME" --generate-notes
+          gh release create "v$env:VERSION" @files --target $env:GITHUB_SHA --latest `
+            --title "SSMS Claude Chat $env:VERSION" --generate-notes
