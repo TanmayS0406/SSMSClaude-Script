@@ -22,6 +22,8 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -55,6 +57,8 @@ jobs:
         run: |
           .\Build-Installer.ps1 -Version ${{ steps.version.outputs.version }}
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          # A fixed-name copy gives a permanent "latest" download link on GitHub and in blob storage.
+          Copy-Item "dist\SsmsClaudeChat-Setup-${{ steps.version.outputs.version }}.exe" dist\SsmsClaudeChat-Setup.exe
 
       - uses: actions/upload-artifact@v5
         with:
@@ -70,8 +74,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # A fixed-name copy keeps .../releases/latest/download/SsmsClaudeChat-Setup.exe pointing at the newest build.
-          Copy-Item "dist\SsmsClaudeChat-Setup-$env:VERSION.exe" dist\SsmsClaudeChat-Setup.exe
           $files = (Get-ChildItem dist\*.exe, dist\*.vsix).FullName
           gh release create "v$env:VERSION" @files --target $env:GITHUB_SHA --latest `
             --title "SSMS Claude Chat $env:VERSION" --generate-notes
+
+      # Needs the repository secret AZURE_STORAGE_CONNECTION_STRING; skipped while it is not set.
+      # Container defaults to "downloads"; override with the repository variable AZURE_STORAGE_CONTAINER.
+      - name: Upload to Azure Blob Storage
+        if: github.event_name == 'push' && env.AZURE_STORAGE_CONNECTION_STRING != ''
+        shell: pwsh
+        env:
+          CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'downloads' }}
+        run: |
+          foreach ($file in Get-ChildItem dist\*.exe, dist\*.vsix) {
+            az storage blob upload --container-name $env:CONTAINER --file $file.FullName --name $file.Name `
+              --overwrite --content-type application/octet-stream --only-show-errors
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          Write-Host "Latest setup: $(az storage blob url --container-name $env:CONTAINER --name SsmsClaudeChat-Setup.exe -o tsv)"

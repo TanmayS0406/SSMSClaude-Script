@@ -205,4 +205,4 @@ ChatServiceProvider.Current = new EchoChatService();
 - Microsoft has not published a stable SSMS extensibility SDK, so a future SSMS update may need small changes
   (the `Microsoft.VisualStudio.Ssms` install target in the manifest and the 17.9.x SDK package versions are the first places to look).
 
-The publisher name ("Seth Business Solutions") lives in `source.extension.vsixmanifest` and `AssemblyInfo.cs`; change it as you like.
+The publisher name ("Tanmay Seth") lives in `source.extension.vsixmanifest`, `AssemblyInfo.cs` and `installer/SsmsClaudeChat.iss`.
