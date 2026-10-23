@@ -26,10 +26,20 @@ so treat it as a strong default rather than a security boundary.)
   calls `show_diagram`, which opens a Mermaid diagram in your browser with *Download SVG* and *Copy source*
   buttons. Pages are kept in `%LOCALAPPDATA%\SsmsChatExtension\diagrams`. Rendering loads Mermaid from
   cdn.jsdelivr.net, so it needs internet access (the source is always on the page).
-- **One-click database diagram**: the **DB diagram** button draws an ER diagram of the active query window's
-  database straight from the catalog (tables, PK / FK columns, foreign keys; no AI call, no tokens used).
-  Big databases are trimmed to 150 tables, and above 40 tables only key columns are shown. Claude can do the
-  same for a database or a single schema with `show_database_diagram`.
+- **One-click database diagram**: the **DB diagram** button lists the databases on the active connection's server;
+  tick one or more (and optionally a schema) and it draws an ER diagram straight from the catalog - no AI call,
+  no tokens used:
+  - **Solid lines** are declared foreign keys.
+  - **Dashed lines** are *inferred* relationships: a column such as `Invoices.CustomerId`, `Customer_ID` or
+    `CustomerKey` is linked to the single-column primary key of a `Customer` / `Customers` / `tblCustomer` table
+    when the types are compatible (all integer types match each other), and a distinctive key name such as
+    `ProductCode` matches itself. Matches named after the table win, then the same schema, the same database,
+    and finally the other selected databases - so links **across databases**, which SQL Server cannot declare,
+    show up too. A column that is its table's whole primary key becomes a 1:1 link.
+  - Each database gets its own colour; under the diagram the page lists every inferred relationship with the
+    reason (review them - they are guesses) and the views / procedures / functions that read other databases.
+  - Large selections are trimmed to 200 tables (tables with relationships first), and above 40 tables only key
+    columns are shown. Claude can do the same with `show_database_diagram` (one or more databases).
 - **Runs SQL for you**: `execute_sql` runs any script (INSERT / UPDATE / DELETE, CREATE / ALTER, EXEC, `GO`
   batches), commits it and gives Claude the results; `execute_query_window` presses F5 on the active query
   window so you see the results grid in SSMS. What happens depends on **Settings > Let Claude run SQL that

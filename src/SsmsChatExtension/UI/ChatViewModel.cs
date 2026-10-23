@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -251,11 +252,14 @@ namespace SsmsChatExtension.UI
             }
         }
 
-        /// <summary>One click: ER diagram of the active query window's database, built from the catalog (no AI call).</summary>
+        /// <summary>
+        /// DB diagram button: pick databases on the active connection's server, then draw an ER diagram from the
+        /// catalog (no AI call) with declared and inferred relationships, also across databases.
+        /// </summary>
         private async Task ShowDatabaseDiagramAsync()
         {
             IsCreatingDiagram = true;
-            StatusText = "Building database diagram...";
+            StatusText = "Reading databases...";
             try
             {
                 var connection = await SsmsConnection.GetAsync(ClaudeSettings.Load().ConnectionStringOverride);
@@ -266,19 +270,34 @@ namespace SsmsChatExtension.UI
                 }
 
                 await TaskScheduler.Default;
-                string mermaid, summary, database;
+                IReadOnlyList<(string Name, bool IsCurrent)> databases;
                 using (var db = connection.Factory())
                 {
                     if (db.State != System.Data.ConnectionState.Open) db.Open();
-                    var built = SchemaDiagram.Build(db, null);
-                    mermaid = built.Mermaid;
-                    summary = built.Summary;
-                    database = db.Database;
+                    databases = SchemaDiagram.ListDatabases(db);
                 }
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                DiagramViewer.Show(database + " ER diagram", mermaid, summary);
-                StatusText = "Opened the diagram in your browser: " + summary;
+                var dialog = new DiagramDialog(connection.Server, databases);
+                if (dialog.ShowModal() != true)
+                {
+                    StatusText = string.Empty;
+                    return;
+                }
+                var options = dialog.Options;
+                StatusText = "Building diagram of " + string.Join(", ", options.Databases) + "...";
+
+                await TaskScheduler.Default;
+                DiagramResult result;
+                using (var db = connection.Factory())
+                {
+                    if (db.State != System.Data.ConnectionState.Open) db.Open();
+                    result = SchemaDiagram.Build(db, options);
+                }
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                DiagramViewer.Show(result.Title, result.Mermaid, result.Summary, result.DetailsHtml);
+                StatusText = "Opened the diagram in your browser: " + result.Summary;
             }
             catch (Exception ex)
             {

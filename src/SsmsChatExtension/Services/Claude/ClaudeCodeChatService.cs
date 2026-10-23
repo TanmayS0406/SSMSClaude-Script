@@ -42,7 +42,8 @@ namespace SsmsChatExtension.Services.Claude
             "Diagrams: when the user asks for a flow diagram, ER diagram or other picture of database objects, write Mermaid syntax and call show_diagram, which opens it in their browser. " +
             "Use flowchart TD for procedure logic (decisions as diamond nodes, one node per main step), erDiagram for tables and foreign keys, sequenceDiagram for procedure call chains. " +
             "Base diagrams on the real definitions you looked up, keep labels short and wrap labels with special characters in double quotes. " +
-            "For an ER diagram of a whole database or schema, call show_database_diagram, which builds it from the catalog. " +
+            "For an ER diagram of whole databases or a schema, call show_database_diagram, which builds it from the catalog for one or more databases " +
+            "and infers relationships from column names, also across databases (SQL Server cannot declare cross-database foreign keys). " +
             "Put T-SQL you suggest in sql code blocks. Be concise.";
 
         private static readonly object ServerLock = new object();

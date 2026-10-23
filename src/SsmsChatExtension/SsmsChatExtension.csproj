@@ -69,6 +69,9 @@
     <Compile Include="SsmsChatPackage.cs" />
     <Compile Include="PackageIds.cs" />
     <Compile Include="UI\ClaudeAccountViewModel.cs" />
+    <Compile Include="UI\DiagramDialog.xaml.cs">
+      <DependentUpon>DiagramDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="UI\ChatControl.xaml.cs">
       <DependentUpon>ChatControl.xaml</DependentUpon>
     </Compile>
@@ -100,6 +103,10 @@
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.9.*" />
   </ItemGroup>
   <ItemGroup>
+    <Page Include="UI\DiagramDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="UI\ChatControl.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

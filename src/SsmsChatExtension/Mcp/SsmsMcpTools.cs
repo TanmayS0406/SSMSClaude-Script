@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -140,12 +141,19 @@ namespace SsmsChatExtension.Mcp
                     "title", "mermaid"),
 
                 Tool("show_database_diagram",
-                    "Build an ER diagram of a whole database (or one schema) from the catalog - tables, key columns and foreign keys - and open it in the user's browser. "
-                    + "Faster and more complete than writing the Mermaid yourself for whole-database diagrams.",
+                    "Build an ER diagram of one or more databases (or one schema) from the catalog and open it in the user's browser: tables, key columns, "
+                    + "declared foreign keys (solid lines) and relationships inferred from matching column names and types (dashed lines), also across databases, "
+                    + "plus a list of views / procedures that read other databases. Faster and more complete than writing the Mermaid yourself.",
                     new JObject
                     {
-                        ["database"] = Str("Database name. Default: the connection's current database."),
-                        ["schema"] = Str("Only tables in this schema, for example dbo.")
+                        ["databases"] = new JObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = new JObject { ["type"] = "string" },
+                            ["description"] = "Database names. Default: the connection's current database. Use list_databases to see what exists."
+                        },
+                        ["schema"] = Str("Only tables in this schema, for example dbo."),
+                        ["infer_relationships"] = new JObject { ["type"] = "boolean", ["description"] = "Add inferred (dashed) relationships. Default true." }
                     }),
 
                 Tool("refresh_object_explorer",
@@ -381,17 +389,19 @@ namespace SsmsChatExtension.Mcp
         private async Task<string> ShowDatabaseDiagramAsync(JObject arguments)
         {
             var connection = await GetConnectionAsync();
-            var schema = (string)arguments["schema"];
-            var diagram = await WithConnectionAsync(connection, (string)arguments["database"], c =>
+            var options = new DiagramOptions
             {
-                var built = SchemaDiagram.Build(c, schema);
-                return (built.Mermaid, built.Summary, Database: c.Database);
-            });
+                Databases = (arguments["databases"] as JArray)?.Select(d => (string)d).Where(d => !string.IsNullOrWhiteSpace(d)).ToList()
+                            ?? new List<string>(),
+                Schema = (string)arguments["schema"],
+                InferRelationships = (bool?)arguments["infer_relationships"] ?? true
+            };
 
-            var title = diagram.Database + (string.IsNullOrWhiteSpace(schema) ? string.Empty : "." + schema.Trim()) + " ER diagram";
+            var result = await WithConnectionAsync(connection, null, c => SchemaDiagram.Build(c, options));
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            var path = DiagramViewer.Show(title, diagram.Mermaid, diagram.Summary);
-            return "Opened the ER diagram in the user's browser: " + diagram.Summary + " Saved as " + path + ".";
+            var path = DiagramViewer.Show(result.Title, result.Mermaid, result.Summary, result.DetailsHtml);
+            return "Opened the ER diagram in the user's browser: " + result.Summary + " Saved as " + path + "."
+                   + " Inferred relationships are guesses from column names; mention that when you discuss them.";
         }
 
         private static string SafeDatabaseName(IDbConnection connection)
