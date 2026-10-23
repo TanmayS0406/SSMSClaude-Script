@@ -6,6 +6,10 @@ changes against it, edit the SQL files in your repository, and rewrite, open or 
 
 Open it from **View > SQL Chat** in SSMS.
 
+Claude is instructed to stay on topic: SQL Server, T-SQL, stored procedures, schema design, performance, SSMS and
+the scripts in your repository. Other requests get a one-line polite refusal. (This is a system-prompt rule,
+so treat it as a strong default rather than a security boundary.)
+
 ## What it does
 
 - **Sign in with Claude**: the button at the top of the window runs the official Claude Code CLI sign-in
@@ -13,7 +17,15 @@ Open it from **View > SQL Chat** in SSMS.
   credentials; the CLI keeps them. **Sign out** runs `claude auth logout`.
 - **Understands your database**: Claude gets tools to look at the server and database of the
   *active query window*: `get_connection_info`, `list_databases`, `list_objects`, `describe_object` (columns,
-  keys, indexes, foreign keys, parameters, row count, full definition) and `run_query` (always read-only).
+  keys, indexes, foreign keys, parameters, row count, full definition), `get_dependencies` (what an object uses
+  and what uses it) and `run_query` (always read-only).
+- **Stored procedures**: Claude reads a procedure's definition and dependencies before explaining it, writes
+  new or changed procedures as `CREATE OR ALTER` in the editor or your repository, deploys them with `execute_sql`
+  when you ask, and runs them with `EXEC` (subject to the approval setting below).
+- **Diagrams**: ask for a flowchart of a procedure, an ER diagram of some tables or a call chain, and Claude
+  calls `show_diagram`, which opens a Mermaid diagram in your browser with *Download SVG* and *Copy source*
+  buttons. Pages are kept in `%LOCALAPPDATA%\SsmsChatExtension\diagrams`. Rendering loads Mermaid from
+  cdn.jsdelivr.net, so it needs internet access (the source is always on the page).
 - **Runs SQL for you**: `execute_sql` runs any script (INSERT / UPDATE / DELETE, CREATE / ALTER, EXEC, `GO`
   batches), commits it and gives Claude the results; `execute_query_window` presses F5 on the active query
   window so you see the results grid in SSMS. What happens depends on **Settings > Let Claude run SQL that
@@ -125,6 +137,7 @@ ChatServiceProvider.Current = new EchoChatService();
 | `src/SsmsChatExtension/Services/Claude/` | Claude Code CLI wrapper (sign-in, status), the chat service, settings |
 | `src/SsmsChatExtension/Mcp/` | Loopback MCP server and the `ssms` tools Claude calls |
 | `src/SsmsChatExtension/Database/` | Active query window connection (via SSMS internals), the read-only query runner and the `GO`-aware executor |
+| `src/SsmsChatExtension/Diagrams/` | Mermaid diagram pages opened by `show_diagram` |
 | `src/SsmsChatExtension/Editor/SsmsEditor.cs` | Reads / writes / opens query windows through DTE |
 | `installer/` | Install / uninstall scripts |
 | `Build-Installer.ps1` | Builds and bundles the installer |

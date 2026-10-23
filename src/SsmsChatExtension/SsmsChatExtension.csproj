@@ -52,6 +52,7 @@
     <Compile Include="Database\ReadOnlySql.cs" />
     <Compile Include="Database\SqlExecutor.cs" />
     <Compile Include="Database\SsmsConnection.cs" />
+    <Compile Include="Diagrams\DiagramViewer.cs" />
     <Compile Include="Editor\SsmsEditor.cs" />
     <Compile Include="Mcp\McpHttpServer.cs" />
     <Compile Include="Mcp\SsmsMcpTools.cs" />

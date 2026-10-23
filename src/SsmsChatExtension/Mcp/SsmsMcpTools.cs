@@ -9,6 +9,7 @@ using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using Newtonsoft.Json.Linq;
 using SsmsChatExtension.Database;
+using SsmsChatExtension.Diagrams;
 using SsmsChatExtension.Editor;
 using SsmsChatExtension.Services.Claude;
 
@@ -76,6 +77,16 @@ namespace SsmsChatExtension.Mcp
                     },
                     "object"),
 
+                Tool("get_dependencies",
+                    "What an object (procedure, view, function, trigger, table) uses and what uses it, from sys.sql_expression_dependencies. "
+                    + "Use it to understand a stored procedure or to check the impact of changing an object.",
+                    new JObject
+                    {
+                        ["object"] = Str("Object name, ideally schema-qualified, for example dbo.usp_PlaceOrder."),
+                        ["database"] = Str("Database name. Default: the connection's current database.")
+                    },
+                    "object"),
+
                 Tool("run_query",
                     "Run a read-only T-SQL query (SELECT / WITH / DECLARE) and get the results as tab-separated text. "
                     + "Data-changing statements, EXEC, transactions and USE are rejected, and everything runs in a transaction that is rolled back. "
@@ -116,6 +127,18 @@ namespace SsmsChatExtension.Mcp
                     new JObject { ["reason"] = Str("One sentence for the user explaining what this does and why; shown in the approval dialog.") },
                     "reason"),
 
+                Tool("show_diagram",
+                    "Render a Mermaid diagram and open it for the user in their browser (with SVG download). "
+                    + "Use flowchart TD for the logic of a stored procedure or a data flow, erDiagram for tables and their relationships, "
+                    + "sequenceDiagram for call chains between procedures. Use the real object names you looked up.",
+                    new JObject
+                    {
+                        ["title"] = Str("Short title, for example 'dbo.usp_PlaceOrder flow'."),
+                        ["mermaid"] = Str("The Mermaid diagram source, without the ``` fence."),
+                        ["description"] = Str("Optional one or two sentences shown under the title.")
+                    },
+                    "title", "mermaid"),
+
                 Tool("get_query_window",
                     "Get the name, file path, full text and current selection of the active SSMS query window.",
                     new JObject()),
@@ -141,7 +164,9 @@ namespace SsmsChatExtension.Mcp
                 case "list_databases": return await ListDatabasesAsync(arguments);
                 case "list_objects": return await ListObjectsAsync(arguments);
                 case "describe_object": return await DescribeObjectAsync(arguments);
+                case "get_dependencies": return await GetDependenciesAsync(arguments);
                 case "run_query": return await RunQueryAsync(arguments);
+                case "show_diagram": return await ShowDiagramAsync(arguments);
                 case "execute_sql": return await ExecuteSqlAsync(arguments);
                 case "execute_query_window": return await ExecuteQueryWindowAsync(arguments);
                 case "get_query_window": return await GetQueryWindowAsync();
@@ -255,6 +280,37 @@ namespace SsmsChatExtension.Mcp
                 }
                 return output.ToString();
             });
+        }
+
+        private async Task<string> GetDependenciesAsync(JObject arguments)
+        {
+            var objectName = (string)arguments["object"];
+            if (string.IsNullOrWhiteSpace(objectName)) throw new ArgumentException("'object' is required.");
+
+            const string sql =
+                "DECLARE @id int = OBJECT_ID(@name); " +
+                "IF @id IS NULL BEGIN SELECT 'Object not found: ' + @name AS error; RETURN; END; " +
+                "SELECT DISTINCT COALESCE(d.referenced_server_name + '.', '') + COALESCE(d.referenced_database_name + '.', '') " +
+                "  + COALESCE(d.referenced_schema_name + '.', '') + d.referenced_entity_name AS uses, " +
+                "  o.type_desc, d.is_caller_dependent, d.is_ambiguous " +
+                "FROM sys.sql_expression_dependencies d LEFT JOIN sys.objects o ON o.object_id = d.referenced_id " +
+                "WHERE d.referencing_id = @id ORDER BY uses; " +
+                "SELECT DISTINCT OBJECT_SCHEMA_NAME(d.referencing_id) + '.' + OBJECT_NAME(d.referencing_id) AS used_by, o.type_desc " +
+                "FROM sys.sql_expression_dependencies d JOIN sys.objects o ON o.object_id = d.referencing_id " +
+                "WHERE d.referenced_id = @id ORDER BY used_by;";
+
+            var connection = await GetConnectionAsync();
+            return await WithConnectionAsync(connection, (string)arguments["database"], c =>
+                "Result sets: 1 objects it uses (dynamic SQL is not tracked), 2 objects that use it." + Environment.NewLine
+                + ReadOnlySql.Execute(c, sql, new Dictionary<string, object> { ["@name"] = objectName }, ReadOnlySql.MaxRowsLimit));
+        }
+
+        private static async Task<string> ShowDiagramAsync(JObject arguments)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var path = DiagramViewer.Show((string)arguments["title"], (string)arguments["mermaid"], (string)arguments["description"]);
+            return "Opened the diagram in the user's browser (saved as " + path + "). "
+                   + "If the page reports a Mermaid syntax error, the user will tell you; fix it and call show_diagram again.";
         }
 
         private async Task<string> RunQueryAsync(JObject arguments)
