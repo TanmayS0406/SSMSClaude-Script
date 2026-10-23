@@ -119,8 +119,8 @@ which databases are which); the CLI picks it up automatically.
 ## Install into SSMS
 
 1. Download the latest setup:
-   **[SsmsClaudeChat-Setup.exe](https://github.com/TanmayS0406/SSMSClaude-Script/releases/latest/download/SsmsClaudeChat-Setup.exe)**
-   (older versions are on the [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)).
+   **[SsmsClaudeChat-Setup.exe](https://sbsrg9958.blob.core.windows.net/downloads/SsmsClaudeChat-Setup.exe)**
+   (every version is also on the [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)).
 2. Close SSMS and run the setup. It needs no admin rights.
 3. Start SSMS and open **View > SSMS Claude Chat**.
 
@@ -159,6 +159,18 @@ one (1.4.0, 1.4.1, 1.4.2, ...) and is stamped into the VSIX manifest and assembl
   that push releases exactly `1.5.0`, and later pushes continue from there.
 - **Specific version:** push a tag (`git tag v2.0.0`, `git push origin v2.0.0`).
 - Pull requests only build; the setup is under the run's *Artifacts*.
+
+Pushes to `main` also upload to the `downloads` container of the `sbsrg9958` storage account (public read for
+single files, no listing): `SsmsClaudeChat-Setup.exe` (always the newest), `SsmsClaudeChat-Setup-<version>.exe`,
+the `.vsix` and `version.json` (`{"version": ..., "file": ..., "published": ...}`, read by the website).
+The workflow signs in with GitHub OIDC; it needs these repository variables (Settings > Secrets and variables >
+Actions > Variables):
+
+| Variable | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | App ID of the Entra app with a federated credential for `repo:TanmayS0406/SSMSClaude-Script:ref:refs/heads/main` and *Storage Blob Data Contributor* on the `downloads` container. The upload is skipped while this is empty. |
+| `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | The tenant and subscription of the storage account |
+| `AZURE_STORAGE_ACCOUNT` | `sbsrg9958` (`AZURE_STORAGE_CONTAINER` optionally overrides `downloads`) |
 
 ## Using a different AI provider
 

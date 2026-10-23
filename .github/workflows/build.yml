@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write   # OIDC sign-in to Azure for the blob upload
 
 # Releases must not race each other for the same version number.
 concurrency:
@@ -22,8 +23,6 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    env:
-      AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -60,7 +59,7 @@ jobs:
           # A fixed-name copy gives a permanent "latest" download link on GitHub and in blob storage.
           Copy-Item "dist\SsmsClaudeChat-Setup-${{ steps.version.outputs.version }}.exe" dist\SsmsClaudeChat-Setup.exe
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: SsmsClaudeChat-${{ steps.version.outputs.version }}
           path: |
@@ -78,17 +77,35 @@ jobs:
           gh release create "v$env:VERSION" @files --target $env:GITHUB_SHA --latest `
             --title "SSMS Claude Chat $env:VERSION" --generate-notes
 
-      # Needs the repository secret AZURE_STORAGE_CONNECTION_STRING; skipped while it is not set.
-      # Container defaults to "downloads"; override with the repository variable AZURE_STORAGE_CONTAINER.
+      # Signs in with GitHub OIDC as the Entra app in the AZURE_CLIENT_ID repository variable (federated credential
+      # for refs/heads/main, "Storage Blob Data Contributor" on the container). Skipped while the variable is not set.
+      - name: Sign in to Azure
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AZURE_CLIENT_ID != ''
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
       - name: Upload to Azure Blob Storage
-        if: github.event_name == 'push' && env.AZURE_STORAGE_CONNECTION_STRING != ''
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AZURE_CLIENT_ID != ''
         shell: pwsh
         env:
+          ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || 'sbsrg9958' }}
           CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'downloads' }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          foreach ($file in Get-ChildItem dist\*.exe, dist\*.vsix) {
-            az storage blob upload --container-name $env:CONTAINER --file $file.FullName --name $file.Name `
-              --overwrite --content-type application/octet-stream --only-show-errors
+          # version.json lets the website show the current version without a redeploy.
+          @{ version = $env:VERSION; file = "SsmsClaudeChat-Setup-$env:VERSION.exe"; published = (Get-Date).ToUniversalTime().ToString('o') } |
+            ConvertTo-Json | Set-Content dist\version.json -Encoding utf8NoBOM
+          foreach ($file in Get-ChildItem dist\*.exe, dist\*.vsix, dist\version.json) {
+            # Versioned files never change; the fixed-name ones are re-checked every 5 minutes.
+            $versioned = $file.Name -match '\d+\.\d+\.\d+'
+            $type = if ($file.Extension -eq '.json') { 'application/json' } else { 'application/octet-stream' }
+            az storage blob upload --auth-mode login --account-name $env:ACCOUNT --container-name $env:CONTAINER `
+              --file $file.FullName --name $file.Name --overwrite --content-type $type `
+              --content-cache-control $(if ($versioned) { 'public, max-age=31536000, immutable' } else { 'public, max-age=300' }) `
+              --only-show-errors
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
-          Write-Host "Latest setup: $(az storage blob url --container-name $env:CONTAINER --name SsmsClaudeChat-Setup.exe -o tsv)"
+          Write-Host "Latest setup: https://$env:ACCOUNT.blob.core.windows.net/$env:CONTAINER/SsmsClaudeChat-Setup.exe"
