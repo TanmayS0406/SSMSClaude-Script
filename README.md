@@ -123,9 +123,9 @@ which databases are which); the CLI picks it up automatically.
 
 ## Install into SSMS
 
-1. Download the latest setup:
-   **[SsmsClaudeChat-Setup.exe](https://sbsbuilds1998.blob.core.windows.net/downloads/SsmsClaudeChat-Setup.exe)**
-   (every version is also on the [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)).
+1. Download the latest setup from the SSMS Claude Chat website's **Download** button, or
+   **[SsmsClaudeChat-Setup.exe](https://github.com/TanmayS0406/SSMSClaude-Script/releases/latest/download/SsmsClaudeChat-Setup.exe)**
+   from GitHub (every version is on the [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)).
 2. Close SSMS and run the setup. It needs no admin rights.
 3. Start SSMS and open **View > SSMS Claude Chat**.
 
@@ -156,8 +156,8 @@ a VSIX; use Visual Studio or MSBuild.
 
 ## Releases
 
-`.github/workflows/build.yml` publishes a GitHub release on **every push to `main`**, so the download link above
-always gets the newest build. The version bumps automatically: the patch number of the newest `v*` tag goes up by
+`.github/workflows/build.yml` publishes a GitHub release on **every push to `main`**, so the download links above
+always get the newest build. The version bumps automatically: the patch number of the newest `v*` tag goes up by
 one (1.4.0, 1.4.1, 1.4.2, ...) and is stamped into the VSIX manifest and assembly before building.
 
 - **New minor/major version:** raise the version in `source.extension.vsixmanifest` (e.g. to `1.5.0`) and push;
@@ -165,9 +165,18 @@ one (1.4.0, 1.4.1, 1.4.2, ...) and is stamped into the VSIX manifest and assembl
 - **Specific version:** push a tag (`git tag v2.0.0`, `git push origin v2.0.0`).
 - Pull requests only build; the setup is under the run's *Artifacts*.
 
-Pushes to `main` also upload to the `downloads` container of the `sbsbuilds1998` storage account (public read for
-single files, no listing): `SsmsClaudeChat-Setup.exe` (always the newest), `SsmsClaudeChat-Setup-<version>.exe`,
-the `.vsix` and `version.json` (`{"version": ..., "file": ..., "published": ...}`, read by the website).
+Pushes to `main` also upload to the `downloads` container of the `sbsbuilds1998` storage account, one folder per
+version, plus `version.json` at the root pointing at the newest one:
+
+```
+downloads/
+  version.json                       {"version": "1.4.7", "path": "1.4.7/SsmsClaudeChat-Setup-1.4.7.exe", ...}
+  1.4.7/SsmsClaudeChat-Setup-1.4.7.exe
+  1.4.7/SsmsClaudeChat-1.4.7.vsix
+```
+
+The website reads `version.json` and streams the setup from its own `/download` URL, so visitors never see the
+storage address.
 The upload is skipped until one of these is set (Settings > Secrets and variables > Actions):
 
 | Name | Kind | Value |

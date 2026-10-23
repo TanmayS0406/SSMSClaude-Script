@@ -100,20 +100,23 @@ jobs:
           CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'downloads' }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # version.json lets the website show the current version without a redeploy.
-          @{ version = $env:VERSION; file = "SsmsClaudeChat-Setup-$env:VERSION.exe"; published = (Get-Date).ToUniversalTime().ToString('o') } |
-            ConvertTo-Json | Set-Content dist\version.json -Encoding utf8NoBOM
+          # Layout: <version>/SsmsClaudeChat-Setup-<version>.exe and .vsix, plus version.json at the root, which the
+          # website reads to find (and stream) the newest setup.
           # az reads AZURE_STORAGE_SAS_TOKEN from the environment; passing it as an argument would break on its '&'s
           # (az.cmd goes through cmd.exe).
           $auth = if ($env:AZURE_STORAGE_SAS_TOKEN) { @() } else { @('--auth-mode', 'login') }
-          foreach ($file in Get-ChildItem dist\*.exe, dist\*.vsix, dist\version.json) {
-            # Versioned files never change; the fixed-name ones are re-checked every 5 minutes.
-            $versioned = $file.Name -match '\d+\.\d+\.\d+'
-            $type = if ($file.Extension -eq '.json') { 'application/json' } else { 'application/octet-stream' }
+          function Upload($file, $name, $type, $cache) {
             az storage blob upload @auth --account-name $env:ACCOUNT --container-name $env:CONTAINER `
-              --file $file.FullName --name $file.Name --overwrite --content-type $type `
-              --content-cache-control $(if ($versioned) { 'public, max-age=31536000, immutable' } else { 'public, max-age=300' }) `
-              --only-show-errors
+              --file $file --name $name --overwrite --content-type $type --content-cache-control $cache --only-show-errors
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
-          Write-Host "Latest setup: https://$env:ACCOUNT.blob.core.windows.net/$env:CONTAINER/SsmsClaudeChat-Setup.exe"
+
+          $setup = "SsmsClaudeChat-Setup-$env:VERSION.exe"
+          foreach ($name in $setup, "SsmsClaudeChat-$env:VERSION.vsix") {
+            Upload "dist\$name" "$env:VERSION/$name" 'application/octet-stream' 'public, max-age=31536000, immutable'
+          }
+
+          @{ version = $env:VERSION; path = "$env:VERSION/$setup"; file = $setup; published = (Get-Date).ToUniversalTime().ToString('o') } |
+            ConvertTo-Json | Set-Content dist\version.json -Encoding utf8NoBOM
+          Upload 'dist\version.json' 'version.json' 'application/json' 'public, max-age=300'
+          Write-Host "Uploaded $env:CONTAINER/$env:VERSION/$setup"
