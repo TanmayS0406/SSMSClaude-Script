@@ -116,29 +116,49 @@ SSMS Claude Chat window ──stdin──▶ claude -p --output-format stream-js
 You can also add a `CLAUDE.md` to the repository folder to give Claude project conventions (naming, style,
 which databases are which); the CLI picks it up automatically.
 
+## Install into SSMS
+
+1. Download `SsmsClaudeChat-Setup-<version>.exe` from the
+   [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases).
+2. Close SSMS and run the setup. It needs no admin rights.
+3. Start SSMS and open **View > SSMS Claude Chat**.
+
+Setup finds SSMS 21 / 22 and installs the extension with the `VSIXInstaller.exe` that ships with SSMS
+(double-clicking a `.vsix` does not work for SSMS 21+). Running a newer setup upgrades in place. Remove it from
+**Settings > Apps > Installed apps > SSMS Claude Chat**.
+
+Setup options: `/SSMSPATH="D:\...\Release\Common7\IDE"` if SSMS lives in a non-standard folder,
+`/VERYSILENT` for an unattended install.
+
+Windows may show a SmartScreen warning because the setup is not code-signed: click **More info > Run anyway**.
+
 ## Build
 
-Needs Visual Studio 2022 or newer with the **Visual Studio extension development** workload (or the Build Tools).
+Needs Visual Studio 2022 or newer with the **Visual Studio extension development** workload (or the Build Tools),
+and [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`).
 
 ```powershell
-.\Build-Installer.ps1
+.\Build-Installer.ps1                  # version from source.extension.vsixmanifest
+.\Build-Installer.ps1 -Version 1.5.0   # stamps 1.5.0 into the manifest and assembly first
 ```
 
-This restores NuGet packages, builds the VSIX and creates `dist\SsmsChatExtension-Installer\`
-(and a `.zip` of it) containing the `.vsix` and the install scripts.
+This restores NuGet packages, builds the VSIX and creates `dist\SsmsClaudeChat-Setup-<version>.exe`
+(plus the `.vsix`).
 
 You can also open `SsmsChatExtension.sln` in Visual Studio and build it there. `dotnet build` cannot build
 a VSIX; use Visual Studio or MSBuild.
 
-## Install into SSMS
+## Releases
 
-1. Close SSMS.
-2. Run `Install.cmd` from the `dist\SsmsChatExtension-Installer` folder (or `Install.cmd -Quiet` to skip the dialog).
-3. Start SSMS and open **View > SSMS Claude Chat**.
+`.github/workflows/build.yml` builds the setup on every push and pull request (download it from the run's
+*Artifacts*). To publish a release, push a version tag:
 
-The script runs the `VSIXInstaller.exe` that ships with SSMS (double-clicking a `.vsix` does not work for SSMS 21+).
-Use `Uninstall.cmd` to remove it. If SSMS lives in a non-standard folder:
-`Install-SsmsExtension.ps1 -SsmsPath "D:\...\Common7\IDE"`.
+```powershell
+git tag v1.5.0
+git push origin v1.5.0
+```
+
+The workflow stamps that version, builds, and creates the GitHub release with the setup `.exe` and `.vsix` attached.
 
 ## Using a different AI provider
 
@@ -164,8 +184,9 @@ ChatServiceProvider.Current = new EchoChatService();
 | `src/SsmsChatExtension/Diagrams/` | Mermaid diagram pages opened by `show_diagram` |
 | `src/SsmsChatExtension/Editor/SsmsEditor.cs` | Reads / writes / opens / executes query windows through DTE |
 | `src/SsmsChatExtension/Editor/SsmsObjectExplorer.cs` | Refreshes Object Explorer and the IntelliSense cache after schema changes |
-| `installer/` | Install / uninstall scripts |
-| `Build-Installer.ps1` | Builds and bundles the installer |
+| `installer/SsmsClaudeChat.iss` | Inno Setup script for the setup `.exe` |
+| `Build-Installer.ps1` | Builds the VSIX and the setup `.exe` |
+| `.github/workflows/build.yml` | CI build and tag-triggered GitHub releases |
 
 ## Troubleshooting
 
@@ -177,7 +198,7 @@ ChatServiceProvider.Current = new EchoChatService();
 
 - **No "SSMS Claude Chat" in the View menu:** run `Ssms.exe /updateconfiguration` once from the SSMS `Common7\IDE`
   folder to rebuild the extension cache, then restart SSMS.
-- **Install fails:** open the newest `VSIXInstaller_*.log` in `%TEMP%`.
+- **Install fails:** open the newest `VSIXInstaller_*.log` in `%TEMP%`, or run setup with `/LOG="%TEMP%\setup.log"`.
 - **Extension misbehaves after startup:** run `Ssms.exe /log` and check `%APPDATA%\Microsoft\SSMS\...\ActivityLog.xml`.
 - The active-window connection comes from SSMS internals (`ServiceCache.ScriptFactory`, `UIConnectionInfoUtil`)
   read via reflection; if a future SSMS moves them, the connection string override still works.

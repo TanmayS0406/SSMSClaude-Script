@@ -1,0 +1,52 @@
+# Builds the setup .exe on every push and pull request.
+# Pushing a tag like v1.5.0 also stamps that version and publishes a GitHub release with the .exe and .vsix.
+name: Build installer
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Build extension and setup
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            .\Build-Installer.ps1 -Version $env:GITHUB_REF_NAME.TrimStart('v')
+          } else {
+            .\Build-Installer.ps1
+          }
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SsmsClaudeChat
+          path: |
+            dist/*.exe
+            dist/*.vsix
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = (Get-ChildItem dist\*.exe, dist\*.vsix).FullName
+          gh release create $env:GITHUB_REF_NAME @files --title "SSMS Claude Chat $env:GITHUB_REF_NAME" --generate-notes
