@@ -59,6 +59,7 @@
     <Compile Include="Mcp\McpHttpServer.cs" />
     <Compile Include="Mcp\SsmsMcpTools.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\ChatAttachment.cs" />
     <Compile Include="Services\ChatHistory.cs" />
     <Compile Include="Services\ChatModels.cs" />
     <Compile Include="Services\Claude\ClaudeCli.cs" />

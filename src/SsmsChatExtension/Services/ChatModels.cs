@@ -76,10 +76,11 @@ namespace SsmsChatExtension.Services
     /// <summary>Everything a chat service needs to answer one user message.</summary>
     public sealed class ChatRequest
     {
-        public ChatRequest(IReadOnlyList<ChatTurn> turns, string editorContext)
+        public ChatRequest(IReadOnlyList<ChatTurn> turns, string editorContext, IReadOnlyList<ChatAttachment> attachments = null)
         {
             Turns = turns;
             EditorContext = editorContext;
+            Attachments = attachments ?? new ChatAttachment[0];
         }
 
         /// <summary>The conversation so far; the last item is the new user message.</summary>
@@ -90,6 +91,9 @@ namespace SsmsChatExtension.Services
         /// or null when the user switched "include query" off / nothing is open.
         /// </summary>
         public string EditorContext { get; }
+
+        /// <summary>Files and screenshots attached to the new user message (empty when there are none).</summary>
+        public IReadOnlyList<ChatAttachment> Attachments { get; }
 
         /// <summary>
         /// Provider session to continue (null = new conversation). Services that keep server-side sessions,

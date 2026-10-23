@@ -342,7 +342,7 @@
 
             <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
                        Margin="24" Opacity="0.55" IsHitTestVisible="False"
-                       Text="Ask Claude about your database, queries and stored procedures.&#13;&#10;Enter sends, Shift+Enter adds a new line.">
+                       Text="Ask Claude about your database, queries and stored procedures.&#13;&#10;Enter sends, Shift+Enter adds a new line.&#13;&#10;Attach files or screenshots, or paste an image with Ctrl+V.">
                 <TextBlock.Style>
                     <Style TargetType="TextBlock">
                         <Setter Property="Visibility" Value="Collapsed" />
@@ -361,8 +361,10 @@
                    Text="{Binding StatusText}" />
 
         <!-- Input -->
-        <Grid Grid.Row="3" Margin="0,6,0,0">
+        <Grid Grid.Row="3" Margin="0,6,0,0" AllowDrop="True"
+              PreviewDragOver="Input_PreviewDragOver" PreviewDrop="Input_PreviewDrop">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -371,21 +373,58 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <TextBox x:Name="InputBox" Grid.Row="0" Grid.Column="0" Style="{StaticResource InputBox}"
+            <!-- Attachments waiting to be sent -->
+            <ItemsControl Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" ItemsSource="{Binding PendingAttachments}" Focusable="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,0,6,6" ToolTip="{Binding Path}">
+                            <Border CornerRadius="3" Opacity="0.1"
+                                    Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            <Border CornerRadius="3" BorderThickness="1"
+                                    BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}" />
+                            <StackPanel Orientation="Horizontal" Margin="7,2,2,2">
+                                <TextBlock VerticalAlignment="Center" FontSize="11" MaxWidth="200" TextTrimming="CharacterEllipsis">
+                                    <Run Text="&#x1F4CE;" /> <Run Text="{Binding Name, Mode=OneWay}" />
+                                    <Run Text="{Binding DisplaySize, Mode=OneWay}" FontSize="10" />
+                                </TextBlock>
+                                <Button Content="&#x2715;" Style="{StaticResource ChatButton}" Margin="6,0,0,0" Padding="5,0"
+                                        FontSize="10" ToolTip="Remove"
+                                        Command="{Binding DataContext.RemoveAttachmentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBox x:Name="InputBox" Grid.Row="1" Grid.Column="0" Style="{StaticResource InputBox}"
                      AcceptsReturn="True" TextWrapping="Wrap" MinHeight="54" MaxHeight="140"
                      VerticalScrollBarVisibility="Auto"
                      Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
                      PreviewKeyDown="InputBox_PreviewKeyDown" />
 
-            <StackPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Stretch">
+            <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Stretch">
                 <Button Content="Send" Style="{StaticResource PrimaryButton}" Command="{Binding SendCommand}" />
                 <Button Content="Stop" Style="{StaticResource ChatButton}" Margin="0,6,0,0" Command="{Binding StopCommand}" />
             </StackPanel>
 
-            <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0"
-                      Content="Include selected / current query as context"
-                      IsChecked="{Binding IncludeEditorContext}"
-                      Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+            <DockPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" LastChildFill="True">
+                <Button DockPanel.Dock="Right" Content="Screenshot" Style="{StaticResource ChatButton}" Margin="0" Padding="8,2"
+                        Command="{Binding ScreenshotCommand}"
+                        ToolTip="Select an area of the screen to attach (or press Win+Shift+S, then Ctrl+V in the message box)" />
+                <Button DockPanel.Dock="Right" Content="Attach..." Style="{StaticResource ChatButton}" Padding="8,2"
+                        Command="{Binding AttachFileCommand}"
+                        ToolTip="Attach files: SQL scripts, execution plans, logs, CSV, images, PDF... (you can also drop files here)" />
+                <CheckBox VerticalAlignment="Center"
+                          Content="Include selected / current query as context"
+                          IsChecked="{Binding IncludeEditorContext}"
+                          Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+            </DockPanel>
         </Grid>
     </Grid>
 </UserControl>

@@ -44,6 +44,8 @@ namespace SsmsChatExtension.Services.Claude
             "Base diagrams on the real definitions you looked up, keep labels short and wrap labels with special characters in double quotes. " +
             "For an ER diagram of whole databases or a schema, call show_database_diagram, which builds it from the catalog for one or more databases " +
             "and infers relationships from column names, also across databases (SQL Server cannot declare cross-database foreign keys). " +
+            "The user can attach files and screenshots; their paths are listed in the message. Read each one with the Read tool before answering " +
+            "(screenshots often show an error message, an execution plan or a results grid). " +
             "Put T-SQL you suggest in sql code blocks. Be concise.";
 
         private static readonly object ServerLock = new object();
@@ -97,7 +99,7 @@ namespace SsmsChatExtension.Services.Claude
         {
             var resumeSessionId = request.SessionId;
             var workingDirectory = ResolveWorkingDirectory(settings);
-            var info = ClaudeCli.CreateStartInfo(cliPath, BuildArguments(settings, resumeSessionId), workingDirectory);
+            var info = ClaudeCli.CreateStartInfo(cliPath, BuildArguments(settings, resumeSessionId, request.Attachments.Count > 0), workingDirectory);
 
             using (var process = new Process { StartInfo = info })
             {
@@ -230,7 +232,7 @@ namespace SsmsChatExtension.Services.Claude
             }
         }
 
-        private static IEnumerable<string> BuildArguments(ClaudeSettings settings, string resumeSessionId)
+        private static IEnumerable<string> BuildArguments(ClaudeSettings settings, string resumeSessionId, bool hasAttachments)
         {
             var args = new List<string>
             {
@@ -244,6 +246,13 @@ namespace SsmsChatExtension.Services.Claude
                 "--allowedTools", "mcp__" + McpServerName, "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)", "Bash(git show *)",
                 "--permission-mode", settings.EffectivePermissionMode
             };
+
+            if (hasAttachments)
+            {
+                // Lets the Read tool open the attached files (outside the repository folder) in every permission mode.
+                args.Add("--add-dir");
+                args.Add(ChatAttachment.Root);
+            }
 
             if (!string.IsNullOrWhiteSpace(settings.Model))
             {
@@ -278,6 +287,17 @@ namespace SsmsChatExtension.Services.Claude
             }
 
             prompt.Append(last != null ? last.Text : string.Empty);
+
+            if (request.Attachments.Count > 0)
+            {
+                prompt.AppendLine();
+                prompt.AppendLine();
+                prompt.AppendLine("Attached files (read each one with the Read tool):");
+                foreach (var attachment in request.Attachments)
+                {
+                    prompt.AppendLine("- " + attachment.Path);
+                }
+            }
             return prompt.ToString();
         }
 

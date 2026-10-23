@@ -2,13 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
@@ -43,7 +47,14 @@ namespace SsmsChatExtension.UI
 
             Messages = new ObservableCollection<ChatMessage>();
 
-            SendCommand = new RelayCommand(async _ => await SendAsync(), _ => !IsBusy && !string.IsNullOrWhiteSpace(InputText));
+            PendingAttachments = new ObservableCollection<ChatAttachment>();
+            SendCommand = new RelayCommand(async _ => await SendAsync(),
+                                           _ => !IsBusy && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachments.Count > 0));
+            AttachFileCommand = new RelayCommand(_ => BrowseForFiles(), _ => PendingAttachments.Count < ChatAttachment.MaxPerMessage);
+            ScreenshotCommand = new RelayCommand(_ => StartScreenshot(),
+                                                 _ => _snipTimer == null && PendingAttachments.Count < ChatAttachment.MaxPerMessage);
+            RemoveAttachmentCommand = new RelayCommand(p => PendingAttachments.Remove(p as ChatAttachment), p => p is ChatAttachment);
+            ChatAttachment.DeleteOld();
             StopCommand = new RelayCommand(_ => { var cts = _cts; if (cts != null) cts.Cancel(); }, _ => IsBusy);
             ClearCommand = new RelayCommand(_ => NewChat(), _ => !IsBusy && Messages.Count > 0);
             ToggleHistoryCommand = new RelayCommand(_ => { IsHistoryOpen = !IsHistoryOpen; if (IsHistoryOpen) LoadHistory(); });
@@ -76,6 +87,12 @@ namespace SsmsChatExtension.UI
         public ICommand DeleteConversationCommand { get; }
         public ICommand DatabaseDiagramCommand { get; }
         public ICommand InsertCommand { get; }
+        public ICommand AttachFileCommand { get; }
+        public ICommand ScreenshotCommand { get; }
+        public ICommand RemoveAttachmentCommand { get; }
+
+        /// <summary>Files and screenshots that go with the next message (shown above the input box).</summary>
+        public ObservableCollection<ChatAttachment> PendingAttachments { get; }
 
         /// <summary>Saved conversations, newest first (shown when <see cref="IsHistoryOpen"/>).</summary>
         public ObservableCollection<ChatConversation> History { get; }
@@ -125,9 +142,11 @@ namespace SsmsChatExtension.UI
         private async Task SendAsync()
         {
             var text = (InputText ?? string.Empty).Trim();
-            if (text.Length == 0 || IsBusy) return;
+            var attachments = PendingAttachments.ToList();
+            if ((text.Length == 0 && attachments.Count == 0) || IsBusy) return;
 
             InputText = string.Empty;
+            PendingAttachments.Clear();
             StatusText = string.Empty;
             IsBusy = true;
 
@@ -144,7 +163,7 @@ namespace SsmsChatExtension.UI
                     catch { /* no active query window - just chat without context */ }
                 }
 
-                Messages.Add(new ChatMessage(ChatRole.User, text));
+                Messages.Add(new ChatMessage(ChatRole.User, DescribeUserMessage(text, attachments)));
                 Messages.Add(reply);
                 RequestScroll();
 
@@ -153,7 +172,7 @@ namespace SsmsChatExtension.UI
                     .Select(m => new ChatTurn(m.Role, m.Text))
                     .ToList();
 
-                var request = new ChatRequest(turns, editorContext) { SessionId = _conversation.SessionId };
+                var request = new ChatRequest(turns, editorContext, attachments) { SessionId = _conversation.SessionId };
                 var conversation = _conversation;
                 try
                 {
@@ -187,9 +206,165 @@ namespace SsmsChatExtension.UI
             }
         }
 
+        /// <summary>Text of the user's bubble (and history): what they typed plus one line per attachment.</summary>
+        private static string DescribeUserMessage(string text, IReadOnlyList<ChatAttachment> attachments)
+        {
+            var lines = attachments.Select(a => "\U0001F4CE " + a.Name);
+            return string.Join("\n", new[] { text }.Where(t => t.Length > 0).Concat(lines));
+        }
+
+        // ===== Attachments =====
+
+        private DispatcherTimer _snipTimer;
+        private uint _snipClipboardSequence;
+        private DateTime _snipStarted;
+
+        [DllImport("user32.dll")]
+        private static extern uint GetClipboardSequenceNumber();
+
+        /// <summary>Adds files (from the file picker, drag and drop or a pasted file list).</summary>
+        public void AddFiles(IEnumerable<string> paths)
+        {
+            foreach (var path in paths)
+            {
+                if (Directory.Exists(path))
+                {
+                    StatusText = "Folders cannot be attached: " + Path.GetFileName(path);
+                    continue;
+                }
+                if (!TryReserveSlot()) break;
+                try
+                {
+                    PendingAttachments.Add(ChatAttachment.FromFile(path));
+                    StatusText = string.Empty;
+                }
+                catch (Exception ex)
+                {
+                    StatusText = "Could not attach " + Path.GetFileName(path) + ": " + ex.Message;
+                }
+            }
+            CommandManager.InvalidateRequerySuggested();
+        }
+
+        /// <summary>
+        /// Attaches the image on the clipboard as a PNG screenshot. Returns false when the clipboard holds no image.
+        /// </summary>
+        public bool AddClipboardImage()
+        {
+            byte[] png;
+            try
+            {
+                png = ReadClipboardImageAsPng();
+            }
+            catch (Exception ex)
+            {
+                StatusText = "Could not read the clipboard image: " + ex.Message;
+                return true;
+            }
+            if (png == null) return false;
+
+            if (TryReserveSlot())
+            {
+                try
+                {
+                    PendingAttachments.Add(ChatAttachment.FromBytes("screenshot-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png", png));
+                    StatusText = "Screenshot attached.";
+                }
+                catch (Exception ex)
+                {
+                    StatusText = "Could not attach the screenshot: " + ex.Message;
+                }
+            }
+            CommandManager.InvalidateRequerySuggested();
+            return true;
+        }
+
+        private bool TryReserveSlot()
+        {
+            if (PendingAttachments.Count < ChatAttachment.MaxPerMessage) return true;
+            StatusText = "At most " + ChatAttachment.MaxPerMessage + " attachments per message.";
+            return false;
+        }
+
+        private void BrowseForFiles()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Attach files",
+                Multiselect = true,
+                Filter = "All files (*.*)|*.*|SQL scripts (*.sql)|*.sql|Images (*.png;*.jpg;*.jpeg;*.gif;*.bmp)|*.png;*.jpg;*.jpeg;*.gif;*.bmp|"
+                         + "Text and data (*.txt;*.csv;*.json;*.xml;*.log)|*.txt;*.csv;*.json;*.xml;*.log|Execution plans (*.sqlplan)|*.sqlplan|PDF (*.pdf)|*.pdf"
+            };
+            if (dialog.ShowDialog() == true) AddFiles(dialog.FileNames);
+        }
+
+        /// <summary>
+        /// Opens the Windows snipping overlay (as Win+Shift+S does) and attaches the snip as soon as it lands on the clipboard.
+        /// </summary>
+        private void StartScreenshot()
+        {
+            _snipClipboardSequence = GetClipboardSequenceNumber();
+            try
+            {
+                Process.Start(new ProcessStartInfo("ms-screenclip:") { UseShellExecute = true });
+            }
+            catch (Exception)
+            {
+                StatusText = "Could not open the snipping tool. Press Win+Shift+S, then Ctrl+V in the message box.";
+                return;
+            }
+
+            StatusText = "Select an area of the screen to attach (Esc cancels)...";
+            _snipStarted = DateTime.UtcNow;
+            _snipTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher) { Interval = TimeSpan.FromMilliseconds(300) };
+            _snipTimer.Tick += OnSnipTimerTick;
+            _snipTimer.Start();
+            CommandManager.InvalidateRequerySuggested();
+        }
+
+        private void OnSnipTimerTick(object sender, EventArgs e)
+        {
+            var changed = GetClipboardSequenceNumber() != _snipClipboardSequence;
+            var timedOut = DateTime.UtcNow - _snipStarted > TimeSpan.FromMinutes(1);
+            if (!changed && !timedOut) return;
+
+            _snipTimer.Stop();
+            _snipTimer.Tick -= OnSnipTimerTick;
+            _snipTimer = null;
+
+            if (!changed || !AddClipboardImage())
+            {
+                StatusText = changed ? "The clipboard did not get an image, so nothing was attached." : string.Empty;
+            }
+            CommandManager.InvalidateRequerySuggested();
+        }
+
+        /// <summary>The clipboard image as PNG bytes, or null when there is none.</summary>
+        private static byte[] ReadClipboardImageAsPng()
+        {
+            // Snipping Tool also puts a "PNG" format on the clipboard; it keeps colours and transparency exact,
+            // unlike the DIB that Clipboard.GetImage reads.
+            if (Clipboard.ContainsData("PNG") && Clipboard.GetData("PNG") is MemoryStream pngStream)
+            {
+                return pngStream.ToArray();
+            }
+            if (!Clipboard.ContainsImage()) return null;
+
+            var image = Clipboard.GetImage();
+            if (image == null) return null;
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(image));
+            using (var stream = new MemoryStream())
+            {
+                encoder.Save(stream);
+                return stream.ToArray();
+            }
+        }
+
         private void NewChat()
         {
             Messages.Clear();
+            PendingAttachments.Clear();
             StatusText = string.Empty;
             _conversation = new ChatConversation();
         }

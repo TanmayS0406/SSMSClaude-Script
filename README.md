@@ -59,6 +59,11 @@ so treat it as a strong default rather than a security boundary.)
 - **Edits SSMS query windows**: `get_query_window`, `replace_query_window` (one Ctrl+Z undoes it) and
   `open_new_query_window` (connected like the active window). These only change the text; running it is
   `execute_query_window` (above).
+- **Attach files and screenshots**: **Attach...** picks files (SQL scripts, `.sqlplan` execution plans, logs, CSV,
+  images, PDF; up to 10 per message, 20 MB each), or drop them on the input box. **Screenshot** opens the Windows
+  snipping overlay and attaches what you select; Ctrl+V in the message box also attaches a copied image or copied
+  files. Attachments are copied to `%LOCALAPPDATA%\SsmsChatExtension\attachments` (kept 30 days), that folder is
+  passed to the CLI with `--add-dir`, and Claude reads each file with its Read tool, in every permission mode.
 - **Chat history**: every conversation is saved (`%LOCALAPPDATA%\SsmsChatExtension\history`, one JSON file per
   chat). **History** lists them; opening one shows its messages and continues the same Claude session
   (`--resume`), so Claude still remembers it. **New chat** starts a fresh conversation; **Delete** removes one.
