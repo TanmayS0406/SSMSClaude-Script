@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="SsmsChatExtension.8CAA5A9A-15AF-420A-8646-04F08447673D" Version="1.0.0" Language="en-US" Publisher="Seth Business Solutions" />
+    <Identity Id="SsmsChatExtension.8CAA5A9A-15AF-420A-8646-04F08447673D" Version="1.1.0" Language="en-US" Publisher="Seth Business Solutions" />
     <DisplayName>SQL Chat for SSMS</DisplayName>
-    <Description xml:space="preserve">A dockable Claude chat window for SQL Server Management Studio. Sign in with your Claude account; Claude can read your database (read-only), edit your SQL repository and update query windows.</Description>
+    <Description xml:space="preserve">A dockable Claude chat window for SQL Server Management Studio. Sign in with your Claude account; Claude can read your database, run SQL with your approval, edit your SQL repository and update or execute query windows.</Description>
   </Metadata>
   <Installation>
     <!-- Id and version range copied from the manifest of SSMS 22's own core extension. -->

@@ -24,6 +24,7 @@ namespace SsmsChatExtension.UI
         private string _claudePath;
         private string _repositoryFolder;
         private bool _allowFileEdits;
+        private DatabaseChangeMode _databaseChanges;
         private string _model;
         private string _connectionString;
         private string _settingsStatus = string.Empty;
@@ -61,6 +62,25 @@ namespace SsmsChatExtension.UI
         public string ClaudePath { get { return _claudePath; } set { Set(ref _claudePath, value); } }
         public string RepositoryFolder { get { return _repositoryFolder; } set { Set(ref _repositoryFolder, value); } }
         public bool AllowFileEdits { get { return _allowFileEdits; } set { Set(ref _allowFileEdits, value); } }
+
+        public DatabaseChangeMode DatabaseChanges
+        {
+            get { return _databaseChanges; }
+            set
+            {
+                if (_databaseChanges == value) return;
+                _databaseChanges = value;
+                OnPropertyChanged(nameof(DatabaseChanges));
+                OnPropertyChanged(nameof(DatabaseChangesOff));
+                OnPropertyChanged(nameof(DatabaseChangesAsk));
+                OnPropertyChanged(nameof(DatabaseChangesAllow));
+            }
+        }
+
+        // One bool per radio button.
+        public bool DatabaseChangesOff { get { return DatabaseChanges == DatabaseChangeMode.Off; } set { if (value) DatabaseChanges = DatabaseChangeMode.Off; } }
+        public bool DatabaseChangesAsk { get { return DatabaseChanges == DatabaseChangeMode.Ask; } set { if (value) DatabaseChanges = DatabaseChangeMode.Ask; } }
+        public bool DatabaseChangesAllow { get { return DatabaseChanges == DatabaseChangeMode.Allow; } set { if (value) DatabaseChanges = DatabaseChangeMode.Allow; } }
         public string Model { get { return _model; } set { Set(ref _model, value); } }
         public string ConnectionString { get { return _connectionString; } set { Set(ref _connectionString, value); } }
         public string SettingsStatus { get { return _settingsStatus; } private set { Set(ref _settingsStatus, value); } }
@@ -181,6 +201,7 @@ namespace SsmsChatExtension.UI
             ClaudePath = settings.ClaudePath;
             RepositoryFolder = settings.RepositoryFolder;
             AllowFileEdits = settings.AllowFileEdits;
+            DatabaseChanges = settings.DatabaseChanges;
             Model = settings.Model;
             ConnectionString = settings.ConnectionStringOverride;
             SettingsStatus = string.Empty;
@@ -220,6 +241,7 @@ namespace SsmsChatExtension.UI
             settings.ClaudePath = path;
             settings.RepositoryFolder = folder;
             settings.AllowFileEdits = AllowFileEdits;
+            settings.DatabaseChanges = DatabaseChanges;
             settings.Model = (Model ?? string.Empty).Trim();
             settings.ConnectionStringOverride = connectionString;
 
@@ -266,6 +288,11 @@ namespace SsmsChatExtension.UI
         {
             if (Equals(field, value)) return;
             field = value;
+            OnPropertyChanged(name);
+        }
+
+        private void OnPropertyChanged(string name)
+        {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
     }

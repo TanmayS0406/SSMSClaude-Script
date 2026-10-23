@@ -27,8 +27,10 @@ namespace SsmsChatExtension.Services.Claude
             "You are running inside SQL Server Management Studio (SSMS) through the SQL Chat extension, talking to a database developer. " +
             "The working directory is the user's SQL repository: you may read and edit files there when asked. " +
             "Use the ssms MCP tools to understand the database the user is connected to (get_connection_info, list_databases, list_objects, describe_object, run_query). " +
-            "Never guess table, column or procedure names - look them up first. Database access is read-only and you must not claim to have changed the database. " +
-            "To change what the user sees in SSMS use get_query_window, replace_query_window or open_new_query_window; scripts are never executed for the user. " +
+            "Never guess table, column or procedure names - look them up first. Use run_query (read-only) to explore. " +
+            "When the user asks you to run, apply or fix something in the database, use execute_sql; to run the script in their query window so they see the results grid, use execute_query_window. " +
+            "These may need the user's approval or be turned off; if a call is declined or refused, do not retry it - explain and offer the script instead. Only say the database changed after execute_sql succeeded. " +
+            "To change the editor text use get_query_window, replace_query_window or open_new_query_window. " +
             "Put T-SQL you suggest in sql code blocks. Be concise.";
 
         private static readonly object ServerLock = new object();
@@ -276,7 +278,7 @@ namespace SsmsChatExtension.Services.Claude
             {
                 if (_mcpServer != null) return _mcpConfigPath;
 
-                var server = new McpHttpServer(new SsmsMcpTools(() => ClaudeSettings.Load().ConnectionStringOverride));
+                var server = new McpHttpServer(new SsmsMcpTools(ClaudeSettings.Load));
                 var config = new JObject
                 {
                     ["mcpServers"] = new JObject

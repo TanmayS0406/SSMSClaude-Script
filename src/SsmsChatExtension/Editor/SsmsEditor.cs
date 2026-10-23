@@ -133,6 +133,22 @@ namespace SsmsChatExtension.Editor
             return await ReplaceAllTextAsync(text);
         }
 
+        /// <summary>
+        /// Executes the active query window like F5 (only the selection, if there is one); results appear in SSMS.
+        /// </summary>
+        public static async Task<bool> ExecuteActiveQueryAsync()
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            var dte = await GetDteAsync();
+            var document = dte?.ActiveDocument;
+            if (document == null) return false;
+
+            document.Activate();
+            dte.ExecuteCommand("Query.Execute");
+            return true;
+        }
+
         private static async Task<DTE2> GetDteAsync()
         {
             var service = await AsyncServiceProvider.GlobalProvider.GetServiceAsync(typeof(DTE));

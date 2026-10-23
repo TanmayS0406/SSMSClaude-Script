@@ -208,6 +208,20 @@
                               IsChecked="{Binding AllowFileEdits}"
                               Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
 
+                    <TextBlock Margin="0,8,0,0" FontSize="11" Opacity="0.75" Text="Let Claude run SQL that changes the database" />
+                    <StackPanel Margin="0,3,0,0">
+                        <StackPanel.Resources>
+                            <Style TargetType="RadioButton">
+                                <Setter Property="Margin" Value="0,2,0,0" />
+                                <Setter Property="GroupName" Value="DatabaseChanges" />
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}" />
+                            </Style>
+                        </StackPanel.Resources>
+                        <RadioButton Content="Off - read-only queries only" IsChecked="{Binding DatabaseChangesOff}" />
+                        <RadioButton Content="Ask me before each change (shows the SQL)" IsChecked="{Binding DatabaseChangesAsk}" />
+                        <RadioButton Content="Allow without asking" IsChecked="{Binding DatabaseChangesAllow}" />
+                    </StackPanel>
+
                     <TextBlock Margin="0,8,0,0" FontSize="11" Opacity="0.75" Text="Model (optional, e.g. sonnet or opus)" />
                     <TextBox Margin="0,3,0,0" Style="{StaticResource InputBox}" Padding="4"
                              Text="{Binding Model, UpdateSourceTrigger=PropertyChanged}" />

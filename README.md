@@ -1,8 +1,8 @@
 # SQL Chat for SSMS
 
 A dockable chat window for SQL Server Management Studio 21 / 22, powered by **Claude** through your own
-Claude account. Claude can read and understand the database you are connected to, edit the SQL files in your
-repository, and rewrite or open query windows in SSMS.
+Claude account. Claude can understand the database you are connected to, run queries and (with your approval)
+changes against it, edit the SQL files in your repository, and rewrite, open or execute query windows in SSMS.
 
 Open it from **View > SQL Chat** in SSMS.
 
@@ -11,14 +11,23 @@ Open it from **View > SQL Chat** in SSMS.
 - **Sign in with Claude**: the button at the top of the window runs the official Claude Code CLI sign-in
   (`claude auth login`) in a console window and your browser. The extension never sees or stores your Claude
   credentials; the CLI keeps them. **Sign out** runs `claude auth logout`.
-- **Understands your database (read-only)**: Claude gets tools to look at the server and database of the
+- **Understands your database**: Claude gets tools to look at the server and database of the
   *active query window*: `get_connection_info`, `list_databases`, `list_objects`, `describe_object` (columns,
-  keys, indexes, foreign keys, parameters, row count, full definition) and `run_query`.
+  keys, indexes, foreign keys, parameters, row count, full definition) and `run_query` (always read-only).
+- **Runs SQL for you**: `execute_sql` runs any script (INSERT / UPDATE / DELETE, CREATE / ALTER, EXEC, `GO`
+  batches), commits it and gives Claude the results; `execute_query_window` presses F5 on the active query
+  window so you see the results grid in SSMS. What happens depends on **Settings > Let Claude run SQL that
+  changes the database**:
+  - *Ask me before each change* (default): SSMS shows the SQL, the server / database and Claude's reason;
+    nothing runs unless you click **Yes** (No is the default button).
+  - *Off*: both tools refuse; Claude can still explore with `run_query` and put scripts in the editor.
+  - *Allow without asking*: runs immediately. Only use this against development databases.
 - **Edits your repository**: Claude works in the *repository folder* set in **Settings** and can create and edit
   files there (turn "Let Claude create and edit files..." off to make it ask instead, which in this window means
   the edit is refused). Read-only `git status/diff/log/show` are allowed; other shell commands are blocked.
 - **Edits SSMS query windows**: `get_query_window`, `replace_query_window` (one Ctrl+Z undoes it) and
-  `open_new_query_window` (connected like the active window). Generated SQL is **never executed** for you.
+  `open_new_query_window` (connected like the active window). These only change the text; running it is
+  `execute_query_window` (above).
 - The conversation continues across messages (`--resume`); **Clear** starts a new Claude session.
 - Tool activity shows in the reply as `› SSMS describe_object: dbo.Orders`, `› Edit: C:\repo\proc.sql`, and so on.
 - Still there: streaming replies, Stop, *Include selected / current query as context*, *Insert into query window*, Copy.
@@ -37,7 +46,7 @@ SQL Chat window ──stdin──▶ claude -p --output-format stream-json --res
        ▲                         │  built-in tools: Read / Edit / Write / Grep ... inside the repository
        └──── streamed reply ─────┤
                                  └─ MCP over http://127.0.0.1:<random port>/mcp  (random bearer token)
-                                        └─ "ssms" tools inside SSMS: database (read-only) + query windows
+                                        └─ "ssms" tools inside SSMS: database + query windows
 ```
 
 - Every message runs `claude -p` in the repository folder with `--permission-mode acceptEdits` (or `default`),
@@ -49,7 +58,11 @@ SQL Chat window ──stdin──▶ claude -p --output-format stream-json --res
   (stored DPAPI-encrypted for your Windows user).
 - `run_query` is read-only by design: statements that write, `EXEC`, transactions, `USE`, `OPENROWSET` and similar
   are rejected before they run, and every query also runs inside a transaction that is always rolled back,
-  with a 30 second timeout and a row limit. Use a login with read-only permissions if you need a hard guarantee.
+  with a 30 second timeout and a row limit.
+- `execute_sql` runs batch by batch (split on `GO`, like SSMS) with autocommit and a 5 minute timeout per batch,
+  and stops at the first error, reporting which batches were already committed. The approval dialog is the
+  safety net, so read it; if you need a hard guarantee, connect with a login that has only the permissions
+  you want Claude to have.
 
 ## Settings
 
@@ -59,6 +72,7 @@ SQL Chat window ──stdin──▶ claude -p --output-format stream-json --res
 | --- | --- |
 | Repository folder | Where Claude works and may edit files. Empty = a private scratch folder (`...\SsmsChatExtension\workspace`). |
 | Let Claude create and edit files | `acceptEdits` permission mode. Off = edits are refused. |
+| Let Claude run SQL that changes the database | Off / Ask me before each change (default) / Allow without asking. |
 | Model | Optional `--model` value, for example `sonnet` or `opus`. Empty = CLI default. |
 | Connection string override | Optional. Used for database tools instead of the active query window. |
 | Claude Code CLI path | Optional full path to `claude.exe` / `claude.cmd`. |
@@ -110,7 +124,7 @@ ChatServiceProvider.Current = new EchoChatService();
 | `src/SsmsChatExtension/Services/` | `IChatService`, the echo stub and the message models |
 | `src/SsmsChatExtension/Services/Claude/` | Claude Code CLI wrapper (sign-in, status), the chat service, settings |
 | `src/SsmsChatExtension/Mcp/` | Loopback MCP server and the `ssms` tools Claude calls |
-| `src/SsmsChatExtension/Database/` | Active query window connection (via SSMS internals) and the read-only query runner |
+| `src/SsmsChatExtension/Database/` | Active query window connection (via SSMS internals), the read-only query runner and the `GO`-aware executor |
 | `src/SsmsChatExtension/Editor/SsmsEditor.cs` | Reads / writes / opens query windows through DTE |
 | `installer/` | Install / uninstall scripts |
 | `Build-Installer.ps1` | Builds and bundles the installer |

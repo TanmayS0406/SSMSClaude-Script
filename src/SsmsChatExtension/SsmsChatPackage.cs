@@ -14,7 +14,7 @@ namespace SsmsChatExtension
     /// and the dockable chat tool window.
     /// </summary>
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-    [InstalledProductRegistration("SQL Chat for SSMS", "Dockable chat window for SQL Server Management Studio", "1.0.0")]
+    [InstalledProductRegistration("SQL Chat for SSMS", "Dockable chat window for SQL Server Management Studio", "1.1.0")]
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideToolWindow(typeof(UI.ChatToolWindow), Style = VsDockStyle.Float, Width = 420, Height = 640)]
     [Guid(PackageGuids.SsmsChatString)]

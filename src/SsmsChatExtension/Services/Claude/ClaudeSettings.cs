@@ -3,9 +3,23 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 
 namespace SsmsChatExtension.Services.Claude
 {
+    /// <summary>Whether Claude may run SQL that changes the database.</summary>
+    public enum DatabaseChangeMode
+    {
+        /// <summary>Read-only: only run_query (always rolled back).</summary>
+        Off,
+
+        /// <summary>execute_sql / execute_query_window show a confirmation dialog first.</summary>
+        Ask,
+
+        /// <summary>execute_sql / execute_query_window run without asking.</summary>
+        Allow
+    }
+
     /// <summary>
     /// User settings for the Claude integration, stored in %LOCALAPPDATA%\SsmsChatExtension\settings.json.
     /// The optional connection string is DPAPI-protected (current user) because it may contain a password.
@@ -25,6 +39,10 @@ namespace SsmsChatExtension.Services.Claude
 
         /// <summary>Let Claude create and edit files in <see cref="RepositoryFolder"/> without asking.</summary>
         public bool AllowFileEdits { get; set; } = true;
+
+        /// <summary>Whether Claude may run SQL that changes the database. Default: ask every time.</summary>
+        [JsonConverter(typeof(StringEnumConverter))]
+        public DatabaseChangeMode DatabaseChanges { get; set; } = DatabaseChangeMode.Ask;
 
         /// <summary>Optional model alias or id passed to --model (for example "sonnet" or "opus"). Empty = CLI default.</summary>
         public string Model { get; set; } = string.Empty;

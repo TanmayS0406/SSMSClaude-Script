@@ -18,7 +18,7 @@ namespace SsmsChatExtension.Database
         public const int DefaultMaxRows = 100;
         public const int MaxRowsLimit = 1000;
         private const int MaxCellLength = 400;
-        private const int MaxOutputLength = 60000;
+        internal const int MaxOutputLength = 60000;
         private const int CommandTimeoutSeconds = 30;
 
         private static readonly HashSet<string> Forbidden = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -120,7 +120,7 @@ namespace SsmsChatExtension.Database
             return output.ToString();
         }
 
-        private static void AppendResultSet(StringBuilder output, IDataReader reader, int number, int maxRows)
+        internal static void AppendResultSet(StringBuilder output, IDataReader reader, int number, int maxRows)
         {
             var columns = Enumerable.Range(0, reader.FieldCount)
                 .Select(i => string.IsNullOrEmpty(reader.GetName(i)) ? "(no name)" : reader.GetName(i));

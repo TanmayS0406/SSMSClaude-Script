@@ -4,25 +4,31 @@ using System.Data;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using Newtonsoft.Json.Linq;
 using SsmsChatExtension.Database;
 using SsmsChatExtension.Editor;
+using SsmsChatExtension.Services.Claude;
 
 namespace SsmsChatExtension.Mcp
 {
     /// <summary>
-    /// The "ssms" MCP tools Claude uses to understand the database (read-only) and to edit query windows.
+    /// The "ssms" MCP tools Claude uses to understand the database, run SQL (changes need the user's approval
+    /// unless allowed in settings) and edit or execute query windows.
     /// </summary>
     internal sealed class SsmsMcpTools : IMcpToolProvider
     {
         private const int MaxDefinitionLength = 50000;
+        private const int MaxPreviewLength = 2500;
+        private const int IdYes = 6;
 
-        private readonly Func<string> _connectionStringOverride;
+        private readonly Func<ClaudeSettings> _settings;
 
-        public SsmsMcpTools(Func<string> connectionStringOverride)
+        public SsmsMcpTools(Func<ClaudeSettings> settings)
         {
-            _connectionStringOverride = connectionStringOverride;
+            _settings = settings;
         }
 
         public string Instructions
@@ -30,8 +36,9 @@ namespace SsmsChatExtension.Mcp
             get
             {
                 return "Tools for the SQL Server Management Studio session the user is chatting from. "
-                     + "Database tools are read-only and use the connection of the active query window. "
-                     + "Query window tools change what the user sees in SSMS; they never execute SQL.";
+                     + "Database tools use the connection of the active query window. run_query is always read-only; "
+                     + "execute_sql and execute_query_window can change the database and may need the user's approval in SSMS. "
+                     + "replace_query_window and open_new_query_window only change the editor text.";
             }
         }
 
@@ -85,6 +92,30 @@ namespace SsmsChatExtension.Mcp
                     },
                     "sql"),
 
+                Tool("execute_sql",
+                    "Run T-SQL that may change the database (INSERT / UPDATE / DELETE, DDL such as CREATE or ALTER, EXEC of procedures) and commit it. "
+                    + "GO batch separators are supported; batches run in order and stop at the first error. "
+                    + "Depending on the user's SQL Chat settings, the user must approve it in SSMS first, or database changes are turned off. "
+                    + "Use run_query for read-only exploration. Returns result sets and rows affected.",
+                    new JObject
+                    {
+                        ["sql"] = Str("The script to run."),
+                        ["database"] = Str("Database name. Default: the connection's current database."),
+                        ["reason"] = Str("One sentence for the user explaining what this does and why; shown in the approval dialog."),
+                        ["max_rows"] = new JObject
+                        {
+                            ["type"] = "integer",
+                            ["description"] = "Rows to return per result set, 1-" + ReadOnlySql.MaxRowsLimit + ". Default " + ReadOnlySql.DefaultMaxRows + "."
+                        }
+                    },
+                    "sql", "reason"),
+
+                Tool("execute_query_window",
+                    "Execute the active SSMS query window like pressing F5 (only the selection if text is selected), so the user sees the results grid and messages in SSMS. "
+                    + "The results are not returned to you; use run_query or execute_sql when you need them. Needs the same approval as execute_sql.",
+                    new JObject { ["reason"] = Str("One sentence for the user explaining what this does and why; shown in the approval dialog.") },
+                    "reason"),
+
                 Tool("get_query_window",
                     "Get the name, file path, full text and current selection of the active SSMS query window.",
                     new JObject()),
@@ -111,6 +142,8 @@ namespace SsmsChatExtension.Mcp
                 case "list_objects": return await ListObjectsAsync(arguments);
                 case "describe_object": return await DescribeObjectAsync(arguments);
                 case "run_query": return await RunQueryAsync(arguments);
+                case "execute_sql": return await ExecuteSqlAsync(arguments);
+                case "execute_query_window": return await ExecuteQueryWindowAsync(arguments);
                 case "get_query_window": return await GetQueryWindowAsync();
                 case "replace_query_window": return await ReplaceQueryWindowAsync(arguments);
                 case "open_new_query_window": return await OpenNewQueryWindowAsync(arguments);
@@ -235,9 +268,76 @@ namespace SsmsChatExtension.Mcp
             return await WithConnectionAsync(connection, (string)arguments["database"], c => ReadOnlySql.Run(c, sql, maxRows));
         }
 
+        private async Task<string> ExecuteSqlAsync(JObject arguments)
+        {
+            var sql = (string)arguments["sql"];
+            if (string.IsNullOrWhiteSpace(sql)) throw new ArgumentException("'sql' is required.");
+
+            var database = (string)arguments["database"];
+            var connection = await GetConnectionAsync();
+            await RequireApprovalAsync("Claude wants to run SQL", connection, database, (string)arguments["reason"], sql);
+
+            var maxRows = (int?)arguments["max_rows"] ?? ReadOnlySql.DefaultMaxRows;
+            return await WithConnectionAsync(connection, database, c => SqlExecutor.Run(c, sql, maxRows));
+        }
+
+        private async Task<string> ExecuteQueryWindowAsync(JObject arguments)
+        {
+            var snapshot = await SsmsEditor.GetActiveDocumentAsync();
+            if (snapshot == null) throw new InvalidOperationException("No query window is open.");
+
+            var script = snapshot.SelectedText.Length > 0 ? snapshot.SelectedText : snapshot.Text;
+            if (string.IsNullOrWhiteSpace(script)) throw new InvalidOperationException("The active query window is empty.");
+
+            var connection = await SsmsConnection.GetAsync(null);
+            await RequireApprovalAsync("Claude wants to execute " + snapshot.Name, connection, null, (string)arguments["reason"], script);
+
+            if (!await SsmsEditor.ExecuteActiveQueryAsync()) throw new InvalidOperationException("No query window is open.");
+            return "Started executing " + (snapshot.SelectedText.Length > 0 ? "the selected text of " : string.Empty) + snapshot.Name
+                   + " in SSMS. The user sees the results and messages there; ask them if you need to know the outcome.";
+        }
+
+        /// <summary>Applies the "database changes" setting: refuse, ask the user (Yes / No, default No), or allow.</summary>
+        private async Task RequireApprovalAsync(string title, ActiveConnection connection, string database, string reason, string sql)
+        {
+            var mode = _settings().DatabaseChanges;
+            if (mode == DatabaseChangeMode.Off)
+            {
+                throw new InvalidOperationException(
+                    "Database changes are turned off in SQL Chat settings, so nothing was run. Use run_query for read-only queries, "
+                    + "or give the user the script (replace_query_window) and tell them they can enable changes under Settings.");
+            }
+            if (mode == DatabaseChangeMode.Allow) return;
+
+            var target = connection == null
+                ? "(not connected)"
+                : connection.Server + " / " + (string.IsNullOrWhiteSpace(database)
+                    ? (string.IsNullOrEmpty(connection.Database) ? "default database" : connection.Database)
+                    : database.Trim());
+            var preview = sql.Trim();
+            if (preview.Length > MaxPreviewLength)
+            {
+                preview = preview.Substring(0, MaxPreviewLength) + Environment.NewLine + "... (" + sql.Length + " characters in total)";
+            }
+
+            var message = new StringBuilder();
+            if (!string.IsNullOrWhiteSpace(reason)) message.AppendLine(reason.Trim()).AppendLine();
+            message.Append("Server / database: ").AppendLine(target).AppendLine();
+            message.AppendLine(preview).AppendLine();
+            message.Append("Run it now? Changes are committed.");
+
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            var answer = VsShellUtilities.ShowMessageBox(ServiceProvider.GlobalProvider, message.ToString(), "SQL Chat - " + title,
+                OLEMSGICON.OLEMSGICON_WARNING, OLEMSGBUTTON.OLEMSGBUTTON_YESNO, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_SECOND);
+            if (answer != IdYes)
+            {
+                throw new InvalidOperationException("The user declined to run this SQL. Nothing was executed. Ask them what to change.");
+            }
+        }
+
         private async Task<ActiveConnection> GetConnectionAsync()
         {
-            var connection = await SsmsConnection.GetAsync(_connectionStringOverride());
+            var connection = await SsmsConnection.GetAsync(_settings().ConnectionStringOverride);
             if (connection == null)
             {
                 throw new InvalidOperationException(
