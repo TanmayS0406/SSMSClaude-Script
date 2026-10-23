@@ -119,7 +119,7 @@ which databases are which); the CLI picks it up automatically.
 ## Install into SSMS
 
 1. Download the latest setup:
-   **[SsmsClaudeChat-Setup.exe](https://sbsrg9958.blob.core.windows.net/downloads/SsmsClaudeChat-Setup.exe)**
+   **[SsmsClaudeChat-Setup.exe](https://sbsbuilds1998.blob.core.windows.net/downloads/SsmsClaudeChat-Setup.exe)**
    (every version is also on the [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)).
 2. Close SSMS and run the setup. It needs no admin rights.
 3. Start SSMS and open **View > SSMS Claude Chat**.
@@ -160,17 +160,16 @@ one (1.4.0, 1.4.1, 1.4.2, ...) and is stamped into the VSIX manifest and assembl
 - **Specific version:** push a tag (`git tag v2.0.0`, `git push origin v2.0.0`).
 - Pull requests only build; the setup is under the run's *Artifacts*.
 
-Pushes to `main` also upload to the `downloads` container of the `sbsrg9958` storage account (public read for
+Pushes to `main` also upload to the `downloads` container of the `sbsbuilds1998` storage account (public read for
 single files, no listing): `SsmsClaudeChat-Setup.exe` (always the newest), `SsmsClaudeChat-Setup-<version>.exe`,
 the `.vsix` and `version.json` (`{"version": ..., "file": ..., "published": ...}`, read by the website).
-The workflow signs in with GitHub OIDC; it needs these repository variables (Settings > Secrets and variables >
-Actions > Variables):
+The upload is skipped until one of these is set (Settings > Secrets and variables > Actions):
 
-| Variable | Value |
-| --- | --- |
-| `AZURE_CLIENT_ID` | App ID of the Entra app with a federated credential for `repo:TanmayS0406/SSMSClaude-Script:ref:refs/heads/main` and *Storage Blob Data Contributor* on the `downloads` container. The upload is skipped while this is empty. |
-| `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | The tenant and subscription of the storage account |
-| `AZURE_STORAGE_ACCOUNT` | `sbsrg9958` (`AZURE_STORAGE_CONTAINER` optionally overrides `downloads`) |
+| Name | Kind | Value |
+| --- | --- | --- |
+| `AZURE_STORAGE_SAS_TOKEN` | secret | SAS token for the `downloads` container with create + write rights (no leading `?`) |
+| `AZURE_CLIENT_ID` | variable | Alternative to the SAS: App ID of an Entra app with a federated credential for `repo:TanmayS0406/SSMSClaude-Script:ref:refs/heads/main` and *Storage Blob Data Contributor* on the container; also needs `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` |
+| `AZURE_STORAGE_ACCOUNT` | variable | `sbsbuilds1998` (`AZURE_STORAGE_CONTAINER` optionally overrides `downloads`) |
 
 ## Using a different AI provider
 

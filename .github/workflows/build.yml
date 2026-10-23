@@ -23,6 +23,8 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -77,10 +79,13 @@ jobs:
           gh release create "v$env:VERSION" @files --target $env:GITHUB_SHA --latest `
             --title "SSMS Claude Chat $env:VERSION" --generate-notes
 
-      # Signs in with GitHub OIDC as the Entra app in the AZURE_CLIENT_ID repository variable (federated credential
-      # for refs/heads/main, "Storage Blob Data Contributor" on the container). Skipped while the variable is not set.
+      # Blob upload auth, either of:
+      #  - secret AZURE_STORAGE_SAS_TOKEN: a SAS for the container with create/write rights, or
+      #  - variable AZURE_CLIENT_ID: an Entra app with a GitHub OIDC federated credential for refs/heads/main and
+      #    "Storage Blob Data Contributor" on the container (for accounts that disallow shared keys).
+      # Skipped while neither is set.
       - name: Sign in to Azure
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AZURE_CLIENT_ID != ''
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.AZURE_STORAGE_SAS_TOKEN == '' && vars.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -88,21 +93,22 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Upload to Azure Blob Storage
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AZURE_CLIENT_ID != ''
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push' && (env.AZURE_STORAGE_SAS_TOKEN != '' || vars.AZURE_CLIENT_ID != '')
         shell: pwsh
         env:
-          ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || 'sbsrg9958' }}
+          ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || 'sbsbuilds1998' }}
           CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'downloads' }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           # version.json lets the website show the current version without a redeploy.
           @{ version = $env:VERSION; file = "SsmsClaudeChat-Setup-$env:VERSION.exe"; published = (Get-Date).ToUniversalTime().ToString('o') } |
             ConvertTo-Json | Set-Content dist\version.json -Encoding utf8NoBOM
+          $auth = if ($env:AZURE_STORAGE_SAS_TOKEN) { @('--sas-token', $env:AZURE_STORAGE_SAS_TOKEN) } else { @('--auth-mode', 'login') }
           foreach ($file in Get-ChildItem dist\*.exe, dist\*.vsix, dist\version.json) {
             # Versioned files never change; the fixed-name ones are re-checked every 5 minutes.
             $versioned = $file.Name -match '\d+\.\d+\.\d+'
             $type = if ($file.Extension -eq '.json') { 'application/json' } else { 'application/octet-stream' }
-            az storage blob upload --auth-mode login --account-name $env:ACCOUNT --container-name $env:CONTAINER `
+            az storage blob upload @auth --account-name $env:ACCOUNT --container-name $env:CONTAINER `
               --file $file.FullName --name $file.Name --overwrite --content-type $type `
               --content-cache-control $(if ($versioned) { 'public, max-age=31536000, immutable' } else { 'public, max-age=300' }) `
               --only-show-errors
