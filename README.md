@@ -256,3 +256,9 @@ ChatServiceProvider.Current = new EchoChatService();
   (the `Microsoft.VisualStudio.Ssms` install target in the manifest and the 17.9.x SDK package versions are the first places to look).
 
 The publisher name ("Tanmay Seth") lives in `source.extension.vsixmanifest`, `AssemblyInfo.cs` and `installer/SsmsClaudeChat.iss`.
+
+## Support the project
+
+SSMS Claude Chat is free. Sponsoring keeps it maintained and pays for code signing and hosting.
+
+[![Sponsor TanmayS0406 on GitHub](https://img.shields.io/badge/Sponsor-%E2%9D%A4%20TanmayS0406-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/TanmayS0406)
