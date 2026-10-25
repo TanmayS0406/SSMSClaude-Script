@@ -8,7 +8,7 @@
 #   Build output       Syft SBOM, Grype vulnerability scan and ClamAV malware scan of the built setup and VSIX
 #   Repository         OpenSSF Scorecard (main and daily)
 #
-# After runs on main, the report job publishes a summary (results and finding counts, never details) to the public
+# After runs on main, the report job publishes a summary (results and finding counts, never details) for the public
 # docs site: https://tanmays0406.github.io/ssms-claude-chat/security/
 #
 # Every scanner writes SARIF; .github/scripts/Assert-Sarif.ps1 lists the findings in the job summary and fails the
@@ -422,10 +422,10 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    # DOCS_DEPLOY_KEY: private half of a deploy key with write access to TanmayS0406/ssms-claude-chat only.
-    # Without it the report is still built and kept as an artifact, just not published.
+    # Published to the public blob container next to the downloads (same AZURE_STORAGE_SAS_TOKEN as build.yml).
+    # The docs repo's update-security-report workflow copies it into the site; its README shows banner.svg directly.
     env:
-      HAS_KEY: ${{ secrets.DOCS_DEPLOY_KEY != '' }}
+      AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -461,23 +461,20 @@ jobs:
           name: security-report
           path: report
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: env.HAS_KEY == 'true'
-        with:
-          repository: TanmayS0406/ssms-claude-chat
-          ssh-key: ${{ secrets.DOCS_DEPLOY_KEY }}
-          path: docs
-          persist-credentials: true   # zizmor: ignore[artipacked] the next step pushes with it; only the docs repo
-
-      - name: Publish to the docs site
-        if: env.HAS_KEY == 'true'
-        working-directory: docs
+      # Layout: <container>/security/{security.json,badge.json,banner.svg,sbom.spdx.json}, cached for 5 minutes.
+      - name: Publish to blob storage
+        if: env.AZURE_STORAGE_SAS_TOKEN != ''
+        env:
+          ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || 'sbsbuilds1998' }}
+          CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'downloads' }}
         run: |
-          mkdir -p _data security
-          cp ../report/security.json _data/security.json
-          cp ../report/badge.json security/badge.json
-          if [ -f ../report/sbom.spdx.json ]; then cp ../report/sbom.spdx.json security/sbom.spdx.json; fi
-          git add _data/security.json security
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit -q -m "Security report $(date -u +%Y-%m-%dT%H:%MZ)"
-          git push -q
+          upload() {
+            az storage blob upload --account-name "$ACCOUNT" --container-name "$CONTAINER" --file "report/$1" \
+              --name "security/$1" --overwrite --content-type "$2" --content-cache-control 'public, max-age=300' \
+              --only-show-errors > /dev/null
+          }
+          upload security.json application/json
+          upload badge.json application/json
+          upload banner.svg image/svg+xml
+          if [ -f report/sbom.spdx.json ]; then upload sbom.spdx.json application/json; fi
+          echo "Published https://$ACCOUNT.blob.core.windows.net/$CONTAINER/security/security.json"
