@@ -74,6 +74,12 @@ namespace SsmsChatExtension.Services.Claude
         /// <summary>Optional model alias or id passed to --model (for example "sonnet" or "opus"). Empty = CLI default.</summary>
         public string Model { get; set; } = string.Empty;
 
+        /// <summary>Chat window theme (see UI.ChatTheme): "SSMS" follows the SSMS colour theme.</summary>
+        public string Theme { get; set; } = "SSMS";
+
+        /// <summary>Accent colour name (see UI.ChatAccent). Empty = the theme's own accent.</summary>
+        public string Accent { get; set; } = string.Empty;
+
         /// <summary>DPAPI-protected, base64. Use <see cref="ConnectionStringOverride"/> instead.</summary>
         public string ProtectedConnectionString { get; set; } = string.Empty;
 

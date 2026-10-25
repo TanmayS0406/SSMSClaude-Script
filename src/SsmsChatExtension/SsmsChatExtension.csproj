@@ -69,6 +69,9 @@
     <Compile Include="Services\IChatService.cs" />
     <Compile Include="SsmsChatPackage.cs" />
     <Compile Include="PackageIds.cs" />
+    <Compile Include="UI\AppearanceViewModel.cs" />
+    <Compile Include="UI\ButtonChrome.cs" />
+    <Compile Include="UI\ChatTheme.cs" />
     <Compile Include="UI\ClaudeAccountViewModel.cs" />
     <Compile Include="UI\DiagramDialog.xaml.cs">
       <DependentUpon>DiagramDialog.xaml</DependentUpon>
@@ -78,6 +81,8 @@
     </Compile>
     <Compile Include="UI\ChatToolWindow.cs" />
     <Compile Include="UI\ChatViewModel.cs" />
+    <Compile Include="UI\InverseBoolToVisibilityConverter.cs" />
+    <Compile Include="UI\ProjectLinks.cs" />
     <Compile Include="UI\RelayCommand.cs" />
   </ItemGroup>
   <ItemGroup>

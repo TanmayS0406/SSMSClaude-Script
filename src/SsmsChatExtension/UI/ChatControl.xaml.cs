@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Microsoft.VisualStudio.PlatformUI;
 using Microsoft.VisualStudio.Shell;
 using SsmsChatExtension.Services;
 
@@ -18,13 +19,25 @@ namespace SsmsChatExtension.UI
         {
             InitializeComponent();
 
+            var appearance = new AppearanceViewModel();
+            ApplyTheme(appearance);
+            appearance.Changed += (s, e) => ApplyTheme(appearance);
+
+            // "Follow SSMS" re-reads the colours when the SSMS theme changes.
+            VSColorTheme.ThemeChanged += _ => ApplyTheme(appearance);
+
             var account = new ClaudeAccountViewModel();
-            _viewModel = new ChatViewModel(ChatServiceProvider.Current, account);
+            _viewModel = new ChatViewModel(ChatServiceProvider.Current, account, appearance);
             _viewModel.ScrollRequested += OnScrollRequested;
             account.SettingsSaved += (s, e) => _viewModel.RefreshServiceName();
             DataContext = _viewModel;
 
             Loaded += OnFirstLoaded;
+        }
+
+        private void ApplyTheme(AppearanceViewModel appearance)
+        {
+            appearance.Theme.Apply(this, appearance.Accent);
         }
 
         private void OnFirstLoaded(object sender, RoutedEventArgs e)

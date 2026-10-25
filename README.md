@@ -6,6 +6,9 @@ changes against it, edit the SQL files in your repository, and rewrite, open or 
 
 Open it from **View > SSMS Claude Chat** in SSMS.
 
+**Website and documentation:** https://tanmays0406.github.io/ssms-claude-chat/ (public repo
+[TanmayS0406/ssms-claude-chat](https://github.com/TanmayS0406/ssms-claude-chat): docs, issues and the Sponsor button).
+
 Claude is instructed to stay on topic: SQL Server, T-SQL, stored procedures, schema design, performance, SSMS and
 the scripts in your repository. Other requests get a one-line polite refusal. (This is a system-prompt rule,
 so treat it as a strong default rather than a security boundary.)
@@ -69,6 +72,12 @@ so treat it as a strong default rather than a security boundary.)
   (`--resume`), so Claude still remembers it. **New chat** starts a fresh conversation; **Delete** removes one.
 - **Model and effort**: pick the model (`opus`, `sonnet`, `haiku`, `fable`, or type any model id) and the effort
   level (`low` ... `max`) in Settings; the header shows what is active.
+- **Themes**: the palette icon in the header picks a theme (*Follow SSMS* (default), Light, Dark, Claude,
+  Claude Dark, Midnight, Nord, Solarized) and an accent colour. Changes apply immediately and are saved as `Theme` /
+  `Accent` in `settings.json`. Colours live in `UI/ChatTheme.cs`: each theme is a background, text and accent
+  colour, and every other brush is blended from those. Toolbar icons are Segoe Fluent Icons / Segoe MDL2 Assets glyphs.
+- **About links**: the bottom of Settings links to the documentation, website, issue tracker and sponsor page
+  (`UI/ProjectLinks.cs`).
 - Tool activity shows in the reply as `› SSMS describe_object: dbo.Orders`, `› Edit: C:\repo\proc.sql`, and so on.
 - Still there: streaming replies, Stop, *Include selected / current query as context*, *Insert into query window*, Copy.
 

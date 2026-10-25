@@ -4,6 +4,9 @@
     <Identity Id="SsmsChatExtension.8CAA5A9A-15AF-420A-8646-04F08447673D" Version="1.4.0" Language="en-US" Publisher="Tanmay Seth" />
     <DisplayName>SSMS Claude Chat</DisplayName>
     <Description xml:space="preserve">A dockable Claude chat window for SQL Server Management Studio. Sign in with your Claude account; Claude can read your database, run SQL and stored procedures with your approval, draw flow and ER diagrams, edit your SQL repository and update or execute query windows.</Description>
+    <MoreInfo>https://tanmays0406.github.io/ssms-claude-chat/</MoreInfo>
+    <GettingStartedGuide>https://tanmays0406.github.io/ssms-claude-chat/getting-started/</GettingStartedGuide>
+    <Tags>SSMS, SQL Server, Claude, AI, T-SQL, chat</Tags>
   </Metadata>
   <Installation>
     <!-- Id and version range copied from the manifest of SSMS 22's own core extension. -->

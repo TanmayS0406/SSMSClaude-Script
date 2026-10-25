@@ -39,10 +39,11 @@ namespace SsmsChatExtension.UI
         private bool _isHistoryOpen;
         private ChatConversation _conversation = new ChatConversation();
 
-        public ChatViewModel(IChatService service, ClaudeAccountViewModel account)
+        public ChatViewModel(IChatService service, ClaudeAccountViewModel account, AppearanceViewModel appearance)
         {
             _service = service;
             Account = account;
+            Appearance = appearance;
             _dispatcher = Dispatcher.CurrentDispatcher;
 
             Messages = new ObservableCollection<ChatMessage>();
@@ -72,6 +73,9 @@ namespace SsmsChatExtension.UI
 
         /// <summary>Claude sign-in and settings (header of the window).</summary>
         public ClaudeAccountViewModel Account { get; }
+
+        /// <summary>Theme and accent picker, plus links to the documentation, website and sponsor page.</summary>
+        public AppearanceViewModel Appearance { get; }
 
         /// <summary>Re-reads <see cref="ServiceName"/>, for example after the model setting changed.</summary>
         public void RefreshServiceName()
