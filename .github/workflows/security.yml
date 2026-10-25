@@ -1,4 +1,4 @@
-# Security checks on every push to main, every pull request and weekly (new advisories land without code changes).
+# Security checks on every push to main, every pull request and daily (new advisories land without code changes).
 #
 #   Code (SAST)        CodeQL (C# and the workflows), Semgrep, Microsoft DevSkim, PSScriptAnalyzer
 #   Secrets            Gitleaks and TruffleHog over the whole git history, Trivy's secret scanner
@@ -6,7 +6,10 @@
 #                      NuGet audit on every restore (see the .csproj)
 #   Workflows          actionlint and zizmor (injection, credentials, pinning, permissions)
 #   Build output       Syft SBOM, Grype vulnerability scan and ClamAV malware scan of the built setup and VSIX
-#   Repository         OpenSSF Scorecard (main and weekly)
+#   Repository         OpenSSF Scorecard (main and daily)
+#
+# After runs on main, the report job publishes a summary (results and finding counts, never details) to the public
+# docs site: https://tanmays0406.github.io/ssms-claude-chat/security/
 #
 # Every scanner writes SARIF; .github/scripts/Assert-Sarif.ps1 lists the findings in the job summary and fails the
 # job at the severity noted on each step. The SARIF files are kept as artifacts.
@@ -20,7 +23,7 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    - cron: '17 3 * * 1'
+    - cron: '17 3 * * *'   # daily, so the public security report stays current
   workflow_dispatch:
 
 permissions: {}
@@ -410,3 +413,71 @@ jobs:
         if: env.HAS_TOKEN == 'true'
         shell: pwsh
         run: .github/scripts/Assert-Sarif.ps1 -Path scorecard.sarif -FailOn none -Title 'OpenSSF Scorecard'
+
+  report:
+    name: Publish security report
+    needs: [codeql, sast, powershell, secrets, dependencies, workflows, scan-build, scorecard]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # DOCS_DEPLOY_KEY: private half of a deploy key with write access to TanmayS0406/ssms-claude-chat only.
+    # Without it the report is still built and kept as an artifact, just not published.
+    env:
+      HAS_KEY: ${{ secrets.DOCS_DEPLOY_KEY != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sarif-*
+          path: sarif
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true   # missing when the build-output scan didn't run
+        with:
+          name: sbom.spdx.json
+          path: sbom
+
+      - name: Build report
+        shell: pwsh
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          SIGNED: ${{ vars.AZURE_CLIENT_ID != '' && vars.ARTIFACT_SIGNING_PROFILE != '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $release = gh release view --json tagName --jq .tagName 2>$null
+          .github/scripts/Write-SecurityReport.ps1 -Needs $env:NEEDS -SarifRoot sarif -OutDir report `
+            -Release "$release" -Signed:($env:SIGNED -eq 'true')
+          $sbom = Get-ChildItem sbom -Recurse -Filter *.json -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($sbom) { Copy-Item $sbom.FullName report/sbom.spdx.json }
+          Get-Content report/security.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-report
+          path: report
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.HAS_KEY == 'true'
+        with:
+          repository: TanmayS0406/ssms-claude-chat
+          ssh-key: ${{ secrets.DOCS_DEPLOY_KEY }}
+          path: docs
+          persist-credentials: true   # zizmor: ignore[artipacked] the next step pushes with it; only the docs repo
+
+      - name: Publish to the docs site
+        if: env.HAS_KEY == 'true'
+        working-directory: docs
+        run: |
+          mkdir -p _data security
+          cp ../report/security.json _data/security.json
+          cp ../report/badge.json security/badge.json
+          if [ -f ../report/sbom.spdx.json ]; then cp ../report/sbom.spdx.json security/sbom.spdx.json; fi
+          git add _data/security.json security
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "Security report $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q

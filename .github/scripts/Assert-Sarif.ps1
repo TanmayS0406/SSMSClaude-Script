@@ -16,13 +16,22 @@
 .PARAMETER SecurityOnly
   Only findings whose rule has a security-severity score can fail the step (e.g. CodeQL's code-quality queries
   are listed but do not fail it).
+
+.PARAMETER JsonPath
+  Also writes the number of findings per severity (only those that could fail the step) to this JSON file, for
+  the public security report.
+
+.PARAMETER UniqueRules
+  With -JsonPath, counts each rule once at its highest severity: several scanners report the same CVE.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string[]]$Path,
     [ValidateSet('critical', 'high', 'medium', 'low', 'none')][string]$FailOn = 'high',
     [string]$Title = 'Findings',
-    [switch]$SecurityOnly
+    [switch]$SecurityOnly,
+    [string]$JsonPath,
+    [switch]$UniqueRules
 )
 
 $ErrorActionPreference = 'Stop'
@@ -86,6 +95,17 @@ if ($env:GITHUB_STEP_SUMMARY) {
         if ($findings.Count -gt 100) { $md += '', "_...and $($findings.Count - 100) more; see the SARIF artifact._" }
     }
     $md -join "`n" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+}
+
+if ($JsonPath) {
+    $counted = @($findings | Where-Object Gates)
+    # $findings is sorted most severe first, so the first of each rule is its highest severity.
+    if ($UniqueRules) { $counted = @($counted | Group-Object Rule | ForEach-Object { $_.Group[0] }) }
+    $counts = [ordered]@{}
+    foreach ($level in 'critical', 'high', 'medium', 'low') {
+        $counts[$level] = @($counted | Where-Object Severity -eq $level).Count
+    }
+    $counts | ConvertTo-Json | Set-Content -LiteralPath $JsonPath -Encoding utf8
 }
 
 if ($failing) { exit 1 }
