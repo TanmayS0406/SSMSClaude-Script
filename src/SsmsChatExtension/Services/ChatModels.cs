@@ -11,10 +11,22 @@ namespace SsmsChatExtension.Services
         System
     }
 
+    /// <summary>Progress of a reply, shown as a small line under it (None for saved and user messages).</summary>
+    public enum RunState
+    {
+        None,
+        Running,
+        Done,
+        Stopped,
+        Failed
+    }
+
     /// <summary>A message shown in the chat list. Text is mutable so replies can stream in.</summary>
     public sealed class ChatMessage : INotifyPropertyChanged
     {
         private string _text;
+        private RunState _runState;
+        private string _runStatus = string.Empty;
 
         public ChatMessage(ChatRole role, string text)
         {
@@ -31,6 +43,29 @@ namespace SsmsChatExtension.Services
             {
                 if (_text == value) return;
                 _text = value ?? string.Empty;
+                OnPropertyChanged();
+            }
+        }
+
+        public RunState RunState
+        {
+            get { return _runState; }
+            set
+            {
+                if (_runState == value) return;
+                _runState = value;
+                OnPropertyChanged();
+            }
+        }
+
+        /// <summary>The line under a reply, e.g. "Thinking… 4s" while it runs and "Done in 12s" after.</summary>
+        public string RunStatus
+        {
+            get { return _runStatus; }
+            set
+            {
+                if (_runStatus == value) return;
+                _runStatus = value ?? string.Empty;
                 OnPropertyChanged();
             }
         }
