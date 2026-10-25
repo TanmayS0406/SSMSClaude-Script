@@ -94,4 +94,31 @@ $report | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $OutDir 
     color         = if ($failed) { 'red' } else { 'brightgreen' }
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutDir 'badge.json') -Encoding utf8
 
+# Banner for the top of the public README: overall status, scan time and one mark per check.
+# Symbols as character codes so the script reads the same in any PowerShell, whatever the file's encoding.
+$tick, $cross, $dash, $dot, $arrow = [char]0x2713, [char]0x2717, [char]0x2013, [char]0xB7, [char]0x2192
+function Escape([string]$text) { [Security.SecurityElement]::Escape($text) }
+$ok = -not $failed
+$fill = if ($ok) { '#f0fdf4' } else { '#fffbeb' }
+$edge = if ($ok) { '#16a34a' } else { '#d97706' }
+$headline = if ($ok) { 'All security checks passed' } else { 'Some security checks need attention' }
+$when = (Get-Date $report.generated).ToUniversalTime().ToString('d MMM yyyy, HH:mm') + ' UTC'
+$sub = "Last scan $when" + $(if ($Release) { " $dot latest release $Release" }) + " $dot scanned on every change and daily"
+$marks = for ($i = 0; $i -lt $results.Count; $i++) {
+    $c = $results[$i]
+    $symbol, $color = switch ($c.result) { 'pass' { $tick, '#16a34a' } 'skipped' { $dash, '#9ca3af' } default { $cross, '#dc2626' } }
+    $x = 24 + ($i % 4) * 200; $y = 104 + [Math]::Floor($i / 4) * 24
+    "<text x='$x' y='$y' font-size='14'><tspan fill='$color' font-weight='700'>$symbol</tspan><tspan fill='#374151' dx='6'>$(Escape $c.name)</tspan></text>"
+}
+$height = 104 + [Math]::Ceiling($results.Count / 4) * 24
+@"
+<svg xmlns='http://www.w3.org/2000/svg' width='840' height='$height' viewBox='0 0 840 $height' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' role='img' aria-label='$(Escape "SSMS Claude Chat security scan: $headline. $sub")'>
+  <rect x='1' y='1' width='838' height='$($height - 2)' rx='12' fill='$fill' stroke='$edge' stroke-width='2'/>
+  <text x='24' y='38' font-size='20' font-weight='700' fill='#111827'><tspan fill='$edge'>$(if ($ok) { $tick } else { '!' })</tspan> SSMS Claude Chat security scan: $(Escape $headline)</text>
+  <text x='24' y='64' font-size='14' fill='#4b5563'>$(Escape $sub)</text>
+  $($marks -join "`n  ")
+  <text x='816' y='38' font-size='14' fill='$edge' text-anchor='end'>Full report $arrow</text>
+</svg>
+"@ | Set-Content -LiteralPath (Join-Path $OutDir 'banner.svg') -Encoding utf8
+
 Write-Host "Security report: $($report.status) ($($failed.Count) failing check(s))"
