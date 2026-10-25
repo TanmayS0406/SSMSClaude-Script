@@ -424,7 +424,18 @@
                         <TextBlock Text="{Binding DisplayName}" FontSize="11" FontWeight="SemiBold"
                                    Foreground="{DynamicResource ChatMutedForeground}" />
                     </StackPanel>
-                    <TextBox Text="{Binding Text, Mode=OneWay}" Style="{StaticResource MessageText}" />
+                    <TextBox x:Name="Body" Text="{Binding Text, Mode=OneWay}" Style="{StaticResource MessageText}" />
+                    <!-- Run status: the mark spins while Claude works ("Thinking… 4s"), then "Done in 12s" -->
+                    <StackPanel x:Name="RunFooter" Orientation="Horizontal" Margin="0,6,0,0" Visibility="Collapsed">
+                        <TextBlock x:Name="RunMark" Style="{StaticResource BrandMark}" FontSize="11" Margin="0,0,5,0"
+                                   RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.RenderTransform>
+                                <RotateTransform />
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                        <TextBlock Text="{Binding RunStatus}" FontSize="10.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource ChatMutedForeground}" />
+                    </StackPanel>
                     <StackPanel x:Name="Actions" Orientation="Horizontal" Margin="0,8,0,0" Visibility="Collapsed">
                         <Button Content="Insert into query" Style="{StaticResource ChatButton}" Padding="7,3" FontSize="11"
                                 ui:ButtonChrome.Icon="&#xE943;"
@@ -455,6 +466,37 @@
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsAssistant}" Value="True">
                     <Setter TargetName="Actions" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <!-- Nothing to show until the first words arrive -->
+                <DataTrigger Binding="{Binding Text}" Value="">
+                    <Setter TargetName="Body" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RunState}" Value="Running">
+                    <Setter TargetName="RunFooter" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="Actions" Property="Visibility" Value="Collapsed" />
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard x:Name="SpinMark">
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="RunMark"
+                                                 Storyboard.TargetProperty="(TextBlock.RenderTransform).(RotateTransform.Angle)"
+                                                 From="0" To="360" Duration="0:0:1.4" RepeatBehavior="Forever" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <RemoveStoryboard BeginStoryboardName="SpinMark" />
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RunState}" Value="Done">
+                    <Setter TargetName="RunFooter" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RunState}" Value="Stopped">
+                    <Setter TargetName="RunFooter" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="RunMark" Property="Foreground" Value="{DynamicResource ChatMutedForeground}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RunState}" Value="Failed">
+                    <Setter TargetName="RunFooter" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="RunMark" Property="Foreground" Value="{DynamicResource ChatMutedForeground}" />
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>

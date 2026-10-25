@@ -154,9 +154,17 @@ namespace SsmsChatExtension.UI
             StatusText = string.Empty;
             IsBusy = true;
 
-            var reply = new ChatMessage(ChatRole.Assistant, string.Empty);
+            var reply = new ChatMessage(ChatRole.Assistant, string.Empty) { RunState = RunState.Running };
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
+
+            // Ticks the "Thinking… 4s" line under the reply, so a long tool call or a slow start never looks frozen.
+            var stopwatch = Stopwatch.StartNew();
+            var outcome = RunState.Done;
+            ShowProgress(reply, stopwatch.Elapsed);
+            var ticker = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
+                                             (s, e) => ShowProgress(reply, stopwatch.Elapsed), _dispatcher);
+            _replyStopwatch = stopwatch;
 
             try
             {
@@ -189,14 +197,22 @@ namespace SsmsChatExtension.UI
             }
             catch (OperationCanceledException)
             {
+                outcome = RunState.Stopped;
                 reply.Text = reply.Text.Length == 0 ? "(stopped)" : reply.Text + "\n\n(stopped)";
             }
             catch (Exception ex)
             {
+                outcome = RunState.Failed;
                 reply.Text = (reply.Text + "\n\n[error] " + ex.Message).Trim();
             }
             finally
             {
+                ticker.Stop();
+                stopwatch.Stop();
+                _replyStopwatch = null;
+                // Background priority: after the reply chunks still queued on the dispatcher, so "Done" comes last.
+                _ = _dispatcher.BeginInvoke(new Action(() => ShowFinished(reply, outcome, stopwatch.Elapsed)), DispatcherPriority.Background);
+
                 IsBusy = false;
                 var cts = _cts;
                 _cts = null;
@@ -497,8 +513,53 @@ namespace SsmsChatExtension.UI
             _dispatcher.BeginInvoke(new Action(() =>
             {
                 reply.Text += chunk;
+                var stopwatch = _replyStopwatch;
+                if (stopwatch != null && reply.RunState == RunState.Running) ShowProgress(reply, stopwatch.Elapsed);
                 RequestScroll();
             }));
+        }
+
+        // ===== Run status under a reply =====
+
+        private Stopwatch _replyStopwatch;
+
+        /// <summary>"Thinking… 4s" before any output, then what Claude is doing: a tool call or writing the answer.</summary>
+        private static void ShowProgress(ChatMessage reply, TimeSpan elapsed)
+        {
+            if (reply.RunState != RunState.Running) return;
+            string activity;
+            if (reply.Text.Length == 0)
+            {
+                activity = "Thinking";
+            }
+            else
+            {
+                // Tool calls arrive as activity lines ("› SSMS describe_object: dbo.Orders"); the newest one wins
+                // until Claude writes text again.
+                var lastLine = reply.Text.TrimEnd('\n').Split('\n').Last();
+                activity = lastLine.StartsWith("› ", StringComparison.Ordinal)
+                    ? "Running " + lastLine.Substring(2).Trim()
+                    : "Writing";
+            }
+            reply.RunStatus = activity + "…" + (elapsed.TotalSeconds < 1 ? string.Empty : " " + FormatElapsed(elapsed));
+        }
+
+        private static void ShowFinished(ChatMessage reply, RunState outcome, TimeSpan elapsed)
+        {
+            reply.RunState = outcome;
+            switch (outcome)
+            {
+                case RunState.Stopped: reply.RunStatus = "Stopped after " + FormatElapsed(elapsed); break;
+                case RunState.Failed: reply.RunStatus = "Failed after " + FormatElapsed(elapsed); break;
+                default: reply.RunStatus = "Done in " + FormatElapsed(elapsed); break;
+            }
+        }
+
+        private static string FormatElapsed(TimeSpan elapsed)
+        {
+            return elapsed.TotalSeconds < 60
+                ? Math.Max(1, (int)elapsed.TotalSeconds) + "s"
+                : (int)elapsed.TotalMinutes + "m " + elapsed.Seconds.ToString("00") + "s";
         }
 
         private async Task InsertAsync(ChatMessage message)
