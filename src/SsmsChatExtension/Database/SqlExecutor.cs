@@ -50,7 +50,7 @@ namespace SsmsChatExtension.Database
                 {
                     using (var command = connection.CreateCommand())
                     {
-                        command.CommandText = batches[i];
+                        command.CommandText = batches[i]; // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli - runs the user's own script by design (gated by the user's approval setting)
                         command.CommandTimeout = CommandTimeoutSeconds;
 
                         using (var reader = command.ExecuteReader())

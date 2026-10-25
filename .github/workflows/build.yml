@@ -75,6 +75,8 @@ jobs:
           ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT || 'https://eus.codesigning.azure.net/' }}
           ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT || 'Signs' }}
           PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          # RFC 3161 timestamping is plain HTTP by design: the response is itself signed.
+          TIMESTAMP_URL: http://timestamp.acs.microsoft.com # DevSkim: ignore DS137138
         run: |
           $dir = Join-Path $env:RUNNER_TEMP 'signing'
           New-Item -ItemType Directory -Force $dir | Out-Null
@@ -94,8 +96,10 @@ jobs:
               'AzurePowerShellCredential', 'AzureDeveloperCliCredential', 'InteractiveBrowserCredential')
           } | ConvertTo-Json | Set-Content "$dir\metadata.json" -Encoding utf8NoBOM
 
-          $command = "`"$($signtool.FullName)`" sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 " +
-                     "/dlib `"$($dlib.FullName)`" /dmdf `"$dir\metadata.json`""
+          $command = @(
+            "`"$($signtool.FullName)`" sign /fd SHA256 /tr $env:TIMESTAMP_URL /td SHA256"   # DevSkim: ignore DS197836 (digest algorithm flags)
+            "/dlib `"$($dlib.FullName)`" /dmdf `"$dir\metadata.json`""
+          ) -join ' '
           "command=$command" >> $env:GITHUB_OUTPUT
 
       - name: Build extension and setup

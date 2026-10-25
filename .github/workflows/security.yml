@@ -176,6 +176,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      pull-requests: read   # Gitleaks lists the commits of a pull request
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -304,6 +305,7 @@ jobs:
 
       - name: Unpack VSIX
         run: |
+          mkdir -p build/unpacked
           for vsix in build/*.vsix; do unzip -q "$vsix" -d "build/unpacked/$(basename "$vsix" .vsix)"; done
           find build -type f -exec ls -l {} +
 

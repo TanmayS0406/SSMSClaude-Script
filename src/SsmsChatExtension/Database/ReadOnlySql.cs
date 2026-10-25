@@ -77,7 +77,7 @@ namespace SsmsChatExtension.Database
                     using (var command = connection.CreateCommand())
                     {
                         command.Transaction = transaction;
-                        command.CommandText = sql;
+                        command.CommandText = sql; // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli - Run() validates user SQL as read-only; catalog queries are constant and parameterised
                         command.CommandTimeout = CommandTimeoutSeconds;
                         if (parameters != null)
                         {
