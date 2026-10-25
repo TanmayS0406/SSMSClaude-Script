@@ -1,0 +1,396 @@
+# Security checks on every push to main, every pull request and weekly (new advisories land without code changes).
+#
+#   Code (SAST)        CodeQL (C# and the workflows), Semgrep, Microsoft DevSkim, PSScriptAnalyzer
+#   Secrets            Gitleaks and TruffleHog over the whole git history, Trivy's secret scanner
+#   Dependencies       Dependency Review (pull requests), OSV-Scanner and Trivy over packages.lock.json,
+#                      NuGet audit on every restore (see the .csproj)
+#   Workflows          actionlint and zizmor (injection, credentials, pinning, permissions)
+#   Build output       Syft SBOM, Grype vulnerability scan and ClamAV malware scan of the built setup and VSIX
+#   Repository         OpenSSF Scorecard (main and weekly)
+#
+# Every scanner writes SARIF; .github/scripts/Assert-Sarif.ps1 lists the findings in the job summary and fails the
+# job at the severity noted on each step. The SARIF files are kept as artifacts.
+#
+# The Security tab (code scanning) and Dependency Review need GitHub Code Security on a private repository. Once it
+# is enabled, set the repository variable CODE_SECURITY to 'true' to upload the SARIF there and run Dependency Review.
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read            # CodeQL and Scorecard read workflow run metadata
+      security-events: write   # upload SARIF to code scanning (with CODE_SECURITY)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: csharp
+            os: windows-latest
+            build-mode: manual
+          - language: actions
+            os: ubuntu-latest
+            build-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-and-quality
+
+      - name: Install Inno Setup
+        if: matrix.language == 'csharp'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      # The same (unsigned) build as build.yml; the scan-build job below scans its output.
+      - name: Build extension and setup
+        if: matrix.language == 'csharp'
+        shell: pwsh
+        run: |
+          .\Build-Installer.ps1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:${{ matrix.language }}
+          output: sarif
+          upload: ${{ vars.CODE_SECURITY == 'true' && 'always' || 'never' }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sarif-codeql-${{ matrix.language }}
+          path: sarif
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.language == 'csharp'
+        with:
+          name: build-output
+          path: |
+            dist/*.exe
+            dist/*.vsix
+          if-no-files-found: error
+
+      # Fails on high or critical security findings; code-quality results are listed only.
+      - name: Check findings
+        shell: pwsh
+        run: .github/scripts/Assert-Sarif.ps1 -Path sarif -FailOn high -SecurityOnly -Title "CodeQL ($env:LANGUAGE)"
+        env:
+          LANGUAGE: ${{ matrix.language }}
+
+  sast:
+    name: Semgrep and DevSkim
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to code scanning (with CODE_SECURITY)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Semgrep
+        run: |
+          mkdir -p sarif
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:/src" -w /src \
+            semgrep/semgrep:1.182.0@sha256:4a34048c04fef049f71665047f074cffb00cc3d89482f965a5cd151d589237af \
+            semgrep scan --metrics=off --disable-version-check \
+              --config p/csharp --config p/secrets --config p/github-actions --config p/security-audit \
+              --exclude dist --exclude bin --exclude obj \
+              --sarif --output sarif/semgrep.sarif
+
+      - uses: microsoft/DevSkim-Action@4b5047945a44163b94642a1cecc0d93a3f428cc6 # v1.0.16
+        with:
+          output-directory: sarif
+          output-filename: devskim.sarif
+          ignore-globs: '**/.git/**,**/bin/**,**/obj/**,**/dist/**,**/.vs/**'
+
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always() && vars.CODE_SECURITY == 'true'
+        with:
+          sarif_file: sarif
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sarif-sast
+          path: sarif
+
+      # Fails on high or critical (Semgrep ERROR, DevSkim Critical/Important).
+      - name: Check findings
+        shell: pwsh
+        run: .github/scripts/Assert-Sarif.ps1 -Path sarif -FailOn high -Title 'Semgrep and DevSkim'
+
+  powershell:
+    name: PSScriptAnalyzer
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Fails on errors (which include the security rules such as AvoidUsingPlainTextForPassword); warnings are listed.
+      - name: Analyse scripts
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error, Warning
+          $results | Format-Table Severity, RuleName, ScriptName, Line, Message -AutoSize -Wrap | Out-String -Width 300 | Write-Host
+          $errors = @($results | Where-Object Severity -eq 'Error')
+          "### PSScriptAnalyzer`n`n$(@($results).Count) finding(s), $($errors.Count) error(s)." >> $env:GITHUB_STEP_SUMMARY
+          if ($errors) { exit 1 }
+
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Free for repositories owned by a personal account; an organization needs the GITLEAKS_LICENSE secret.
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITLEAKS_ENABLE_COMMENTS: false
+
+      # Checks candidate secrets against their services; fails on live or unverifiable ones.
+      - uses: trufflesecurity/trufflehog@31ce31ee1abbcc7dc8eee5764c17121c3044c8b2 # v3.99.7
+        with:
+          version: 3.99.7
+          extra_args: --results=verified,unknown
+
+  dependencies:
+    name: Dependency scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to code scanning (with CODE_SECURITY)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: mkdir -p sarif
+
+      - name: OSV-Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        continue-on-error: true   # exits non-zero on any vulnerability; the check below applies the threshold
+        with:
+          scan-args: |-
+            --recursive
+            --format=sarif
+            --output=sarif/osv-scanner.sarif
+            ./
+
+      - name: Trivy (vulnerabilities, secrets, misconfigurations, licences)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig,license
+          skip-dirs: dist,.vs
+          format: sarif
+          output: sarif/trivy.sarif
+
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always() && vars.CODE_SECURITY == 'true'
+        with:
+          sarif_file: sarif
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sarif-dependencies
+          path: sarif
+
+      # Fails on critical only: the high ones today (MessagePack, System.Text.Json, Microsoft.IO.Redist) come in
+      # through Microsoft.VisualStudio.SDK, which is compile-time only (ExcludeAssets="runtime"); SSMS supplies
+      # those assemblies and the VSIX ships none of them. Direct dependencies are held to moderate by NuGet audit.
+      - name: Check findings
+        shell: pwsh
+        run: .github/scripts/Assert-Sarif.ps1 -Path sarif -FailOn critical -Title 'Dependencies (OSV-Scanner, Trivy)'
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request' && vars.CODE_SECURITY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          show-openssf-scorecard: true
+          show-patched-versions: true
+
+  workflows:
+    name: Workflow linting (actionlint, zizmor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
+
+      # Fails on any finding.
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          advanced-security: false
+          persona: regular
+
+  scan-build:
+    name: Build output (SBOM, Grype, ClamAV)
+    needs: codeql
+    if: ${{ !cancelled() }}   # still scan the build when CodeQL reports findings
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to code scanning (with CODE_SECURITY)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-output
+          path: build
+
+      - name: Unpack VSIX
+        run: |
+          for vsix in build/*.vsix; do unzip -q "$vsix" -d "build/unpacked/$(basename "$vsix" .vsix)"; done
+          find build -type f -exec ls -l {} +
+
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: build
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom.spdx.json
+          upload-release-assets: false
+
+      - name: SBOM (CycloneDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: build
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          artifact-name: sbom.cdx.json
+          upload-release-assets: false
+
+      - name: Grype
+        id: grype
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          sbom: sbom.spdx.json
+          fail-build: false
+          output-format: sarif
+          output-file: sarif/grype.sarif
+
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always() && vars.CODE_SECURITY == 'true'
+        with:
+          sarif_file: sarif
+          category: grype
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sarif-build-output
+          path: sarif
+
+      # What actually ships is held to a stricter bar than the source tree: fails on medium or above.
+      - name: Check findings
+        shell: pwsh
+        run: .github/scripts/Assert-Sarif.ps1 -Path sarif -FailOn medium -Title 'Build output (Grype)'
+
+      - name: ClamAV malware scan
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clamav > /dev/null
+          sudo systemctl stop clamav-freshclam || true
+          sudo freshclam --quiet
+          clamscan --recursive --infected --scan-archive=yes build
+
+  scorecard:
+    name: OpenSSF Scorecard
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read            # CodeQL and Scorecard read workflow run metadata
+      security-events: write   # upload SARIF to code scanning (with CODE_SECURITY)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # publish_results stays off: the repository is private.
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: false
+
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: vars.CODE_SECURITY == 'true'
+        with:
+          sarif_file: scorecard.sarif
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sarif-scorecard
+          path: scorecard.sarif
+
+      # Report only: Scorecard grades repository practices (branch protection, reviews...) rather than code.
+      - name: List findings
+        shell: pwsh
+        run: .github/scripts/Assert-Sarif.ps1 -Path scorecard.sarif -FailOn none -Title 'OpenSSF Scorecard'

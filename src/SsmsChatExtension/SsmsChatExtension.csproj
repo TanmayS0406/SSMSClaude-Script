@@ -28,6 +28,15 @@
     <!-- This extension targets SSMS, not Visual Studio: never auto-deploy to a VS experimental instance. -->
     <DeployExtension>False</DeployExtension>
     <DeployVSTemplates>False</DeployVSTemplates>
+    <!-- packages.lock.json records every package version and hash, for the dependency scanners in security.yml and
+         Dependabot. Restore updates it after a PackageReference changes. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Restore fails when a direct package has a known moderate or worse vulnerability. Transitive ones come from
+         Microsoft.VisualStudio.SDK, which is compile-time only (SSMS supplies those assemblies); security.yml reports them. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>direct</NuGetAuditMode>
+    <NuGetAuditLevel>moderate</NuGetAuditLevel>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1902;NU1903;NU1904</WarningsAsErrors>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -104,7 +113,7 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Floating patch versions so restore picks the newest available 17.9.x build. -->
+    <!-- Floating patch versions; packages.lock.json records the 17.9.x build in use (Dependabot bumps it). -->
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.9.*" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.9.*" />
   </ItemGroup>

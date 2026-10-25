@@ -11,9 +11,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: write
-  id-token: write   # OIDC sign-in to Azure for code signing (and the blob upload without a SAS)
+permissions: {}
 
 # Releases must not race each other for the same version number.
 concurrency:
@@ -23,12 +21,16 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write   # gh release create
+      id-token: write   # OIDC sign-in to Azure for code signing (and the blob upload without a SAS)
     env:
       AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Pick version
         id: version
@@ -57,7 +59,7 @@ jobs:
       # refs/heads/main). It needs "Artifact Signing Certificate Profile Signer" on the signing account to sign.
       - name: Sign in to Azure
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AZURE_CLIENT_ID != ''
-        uses: azure/login@v2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -100,22 +102,24 @@ jobs:
         shell: pwsh
         env:
           SIGN: ${{ steps.signing.outputs.command }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           if ($env:SIGN) {
-            .\Build-Installer.ps1 -Version ${{ steps.version.outputs.version }} -SignCommand $env:SIGN
+            .\Build-Installer.ps1 -Version $env:VERSION -SignCommand $env:SIGN
           } else {
-            .\Build-Installer.ps1 -Version ${{ steps.version.outputs.version }}
+            .\Build-Installer.ps1 -Version $env:VERSION
           }
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           # A fixed-name copy gives a permanent "latest" download link on GitHub and in blob storage.
-          Copy-Item "dist\SsmsClaudeChat-Setup-${{ steps.version.outputs.version }}.exe" dist\SsmsClaudeChat-Setup.exe
+          Copy-Item "dist\SsmsClaudeChat-Setup-$env:VERSION.exe" dist\SsmsClaudeChat-Setup.exe
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: SsmsClaudeChat-${{ steps.version.outputs.version }}
           path: |
             dist/*.exe
             dist/*.vsix
+          if-no-files-found: error
 
       - name: Publish release
         if: github.event_name == 'push'
