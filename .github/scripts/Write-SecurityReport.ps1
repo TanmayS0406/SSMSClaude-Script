@@ -67,6 +67,8 @@ $results = foreach ($check in $checks) {
             }
             catch { Write-Warning "$($check.Name): $($_.Exception.Message)" }
         }
+        # A job can succeed without scanning (Scorecard without its token): no results means it didn't run.
+        elseif ($result -eq 'pass') { $result = 'skipped' }
     }
     [ordered]@{
         id = $check.Job; name = $check.Name; tools = $check.Tools; about = $check.About
