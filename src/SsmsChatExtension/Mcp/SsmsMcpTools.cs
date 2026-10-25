@@ -503,7 +503,7 @@ namespace SsmsChatExtension.Mcp
         {
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = sql;
+                command.CommandText = sql; // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli - constant query, @name is a parameter
                 command.CommandTimeout = 30;
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = "@name";

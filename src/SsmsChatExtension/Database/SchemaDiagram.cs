@@ -310,7 +310,7 @@ namespace SsmsChatExtension.Database
         private static IDataReader Query(IDbConnection connection, string sql, object schema)
         {
             var command = connection.CreateCommand();
-            command.CommandText = sql;
+            command.CommandText = sql; // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli - constant catalog queries, @schema is a parameter
             command.CommandTimeout = 60;
             if (schema != null)
             {

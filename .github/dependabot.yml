@@ -1,0 +1,23 @@
+# Weekly update PRs for the pinned GitHub Actions (SHA plus version comment) and the NuGet packages
+# (PackageReference and packages.lock.json). Security updates come as soon as an advisory is published.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      nuget:
+        patterns: ['*']
+    cooldown:
+      default-days: 7

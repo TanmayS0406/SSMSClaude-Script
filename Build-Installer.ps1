@@ -19,7 +19,7 @@
 
 .PARAMETER SignCommand
   Optional. A signtool command line without the file to sign, e.g.
-  "C:\...\signtool.exe" sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib "...\Azure.CodeSigning.Dlib.dll" /dmdf "...\metadata.json"
+  "C:\...\signtool.exe" sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib "...\Azure.CodeSigning.Dlib.dll" /dmdf "...\metadata.json" # DevSkim: ignore DS137138,DS197836
 #>
 [CmdletBinding()]
 param(
