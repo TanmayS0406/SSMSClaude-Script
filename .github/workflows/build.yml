@@ -143,7 +143,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push' && (env.AZURE_STORAGE_SAS_TOKEN != '' || vars.AZURE_CLIENT_ID != '')
         shell: pwsh
         env:
-          ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || 'sbsbuilds1998' }}
+          ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || 'ssmschatdl0b9391' }}
           CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'downloads' }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |

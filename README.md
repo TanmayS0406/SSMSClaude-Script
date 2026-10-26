@@ -132,9 +132,10 @@ which databases are which); the CLI picks it up automatically.
 
 ## Install into SSMS
 
-1. Download the latest setup from the SSMS Claude Chat website's **Download** button, or
-   **[SsmsClaudeChat-Setup.exe](https://github.com/TanmayS0406/SSMSClaude-Script/releases/latest/download/SsmsClaudeChat-Setup.exe)**
-   from GitHub (every version is on the [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)).
+1. Download the latest setup from the SSMS Claude Chat website's **Download** button, or directly:
+   **[SsmsClaudeChat-Setup.exe](https://ssmsclaudechat-dl.azurewebsites.net/download)**
+   (this repository is private, so its [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)
+   is only visible to you; the link above always serves the newest setup).
 2. Close SSMS and run the setup. It needs no admin rights.
 3. Start SSMS and open **View > SSMS Claude Chat**.
 

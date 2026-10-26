@@ -465,7 +465,7 @@ jobs:
       - name: Publish to blob storage
         if: env.AZURE_STORAGE_SAS_TOKEN != ''
         env:
-          ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || 'sbsbuilds1998' }}
+          ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT || 'ssmschatdl0b9391' }}
           CONTAINER: ${{ vars.AZURE_STORAGE_CONTAINER || 'downloads' }}
         run: |
           upload() {
