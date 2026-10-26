@@ -5,3 +5,6 @@ dist/
 *.user
 *.suo
 packages/
+download-function/publish-out/
+download-function/publish.zip
+download-function/local.settings.json
