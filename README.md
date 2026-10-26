@@ -132,9 +132,10 @@ which databases are which); the CLI picks it up automatically.
 
 ## Install into SSMS
 
-1. Download the latest setup from the SSMS Claude Chat website's **Download** button, or
-   **[SsmsClaudeChat-Setup.exe](https://github.com/TanmayS0406/SSMSClaude-Script/releases/latest/download/SsmsClaudeChat-Setup.exe)**
-   from GitHub (every version is on the [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)).
+1. Download the latest setup from the SSMS Claude Chat website's **Download** button, or directly:
+   **[SsmsClaudeChat-Setup.exe](https://ssmsclaudechat-dl.azurewebsites.net/download)**
+   (this repository is private, so its [Releases page](https://github.com/TanmayS0406/SSMSClaude-Script/releases)
+   is only visible to you; the link above always serves the newest setup).
 2. Close SSMS and run the setup. It needs no admin rights.
 3. Start SSMS and open **View > SSMS Claude Chat**.
 
@@ -190,8 +191,9 @@ one (1.4.0, 1.4.1, 1.4.2, ...) and is stamped into the VSIX manifest and assembl
 - **Specific version:** push a tag (`git tag v2.0.0`, `git push origin v2.0.0`).
 - Pull requests only build; the setup is under the run's *Artifacts*.
 
-Pushes to `main` also upload to the `downloads` container of the `sbsbuilds1998` storage account, one folder per
-version, plus `version.json` at the root pointing at the newest one:
+Pushes to `main` also upload to the private `downloads` container of the `ssmschatdl0b9391` storage account
+(resource group `Joiner-dev`, subscription *Joinery*), one folder per version, plus `version.json` at the root
+pointing at the newest one:
 
 ```
 downloads/
@@ -200,15 +202,25 @@ downloads/
   1.4.7/SsmsClaudeChat-1.4.7.vsix
 ```
 
-The website reads `version.json` and streams the setup from its own `/download` URL, so visitors never see the
-storage address.
+### Download function
+
+The website's **Download** button goes to `https://ssmsclaudechat-dl.azurewebsites.net/download`, an Azure Function
+(`download-function/`, Consumption plan, .NET 10 isolated) that reads `version.json`, redirects to a five-minute
+read-only link for that setup and queues a count. A second function drains the queue into the `Downloads` table of
+the free-tier Azure SQL database (`downloads`, serverless, auto-pauses; the queue absorbs the cold start). Only the
+version and the time are stored. The function writes with a `downloads_writer` user that can `INSERT` and nothing
+else; its connection string is the `SqlConnection` app setting.
+
+Deploy after changing it: `dotnet publish -c Release -o publish-out` in `download-function/`, zip the output (forward
+slashes in entry names) and `az functionapp deploy --type zip --src-path publish.zip` to `ssmsclaudechat-dl`.
+
 The upload is skipped until one of these is set (Settings > Secrets and variables > Actions):
 
 | Name | Kind | Value |
 | --- | --- | --- |
 | `AZURE_STORAGE_SAS_TOKEN` | secret | SAS token for the `downloads` container with create + write rights (no leading `?`) |
 | `AZURE_CLIENT_ID` | variable | Alternative to the SAS: App ID of an Entra app with a federated credential for `repo:TanmayS0406/SSMSClaude-Script:ref:refs/heads/main` and *Storage Blob Data Contributor* on the container; also needs `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID` |
-| `AZURE_STORAGE_ACCOUNT` | variable | `sbsbuilds1998` (`AZURE_STORAGE_CONTAINER` optionally overrides `downloads`) |
+| `AZURE_STORAGE_ACCOUNT` | variable | `ssmschatdl0b9391` (`AZURE_STORAGE_CONTAINER` optionally overrides `downloads`) |
 
 ## Using a different AI provider
 
@@ -235,6 +247,7 @@ ChatServiceProvider.Current = new EchoChatService();
 | `src/SsmsChatExtension/Editor/SsmsEditor.cs` | Reads / writes / opens / executes query windows through DTE |
 | `src/SsmsChatExtension/Editor/SsmsObjectExplorer.cs` | Refreshes Object Explorer and the IntelliSense cache after schema changes |
 | `installer/SsmsClaudeChat.iss` | Inno Setup script for the setup `.exe` |
+| `download-function/` | Azure Function behind the website's Download button: newest-setup redirect and download counter |
 | `Build-Installer.ps1` | Builds the VSIX and the setup `.exe` |
 | `.github/workflows/build.yml` | CI build and tag-triggered GitHub releases |
 
