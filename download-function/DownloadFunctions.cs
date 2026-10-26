@@ -28,7 +28,7 @@ public sealed partial class DownloadFunctions(BlobServiceClient blobs, IConfigur
 {
     public const string CountQueue = "download-counts";
 
-    private const string Container = "downloads";
+    internal const string Container = "downloads";
 
     /// <summary>How long a visitor has to start the download once redirected.</summary>
     private static readonly TimeSpan LinkLifetime = TimeSpan.FromMinutes(5);

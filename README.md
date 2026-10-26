@@ -211,6 +211,11 @@ the free-tier Azure SQL database (`downloads`, serverless, auto-pauses; the queu
 version and the time are stored. The function writes with a `downloads_writer` user that can `INSERT` and nothing
 else; its connection string is the `SqlConnection` app setting.
 
+The same function serves the security report at `/security/{file}` (`security.json`, `badge.json`, `banner.svg`,
+`sbom.spdx.json`, nothing else). `security.yml` publishes those files under `security/` in the private container, and the
+website repository's *Update security report* workflow reads them from the function, so the container never needs
+public access.
+
 Deploy after changing it: `dotnet publish -c Release -o publish-out` in `download-function/`, zip the output (forward
 slashes in entry names) and `az functionapp deploy --type zip --src-path publish.zip` to `ssmsclaudechat-dl`.
 
