@@ -81,6 +81,9 @@
     <Compile Include="SsmsChatPackage.cs" />
     <Compile Include="PackageIds.cs" />
     <Compile Include="UI\AppearanceViewModel.cs" />
+    <Compile Include="UI\ApprovalDialog.xaml.cs">
+      <DependentUpon>ApprovalDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="UI\ButtonChrome.cs" />
     <Compile Include="UI\ChatTheme.cs" />
     <Compile Include="UI\ClaudeAccountViewModel.cs" />
@@ -120,6 +123,10 @@
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.5.*" />
   </ItemGroup>
   <ItemGroup>
+    <Page Include="UI\ApprovalDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="UI\DiagramDialog.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>

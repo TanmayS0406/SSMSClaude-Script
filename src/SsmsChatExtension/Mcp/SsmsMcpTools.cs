@@ -13,6 +13,7 @@ using SsmsChatExtension.Database;
 using SsmsChatExtension.Diagrams;
 using SsmsChatExtension.Editor;
 using SsmsChatExtension.Services.Claude;
+using SsmsChatExtension.UI;
 
 namespace SsmsChatExtension.Mcp
 {
@@ -23,8 +24,6 @@ namespace SsmsChatExtension.Mcp
     internal sealed class SsmsMcpTools : IMcpToolProvider
     {
         private const int MaxDefinitionLength = 50000;
-        private const int MaxPreviewLength = 2500;
-        private const int IdYes = 6;
 
         private readonly Func<ClaudeSettings> _settings;
 
@@ -453,22 +452,10 @@ namespace SsmsChatExtension.Mcp
                 : connection.Server + " / " + (string.IsNullOrWhiteSpace(database)
                     ? (string.IsNullOrEmpty(connection.Database) ? "default database" : connection.Database)
                     : database.Trim());
-            var preview = sql.Trim();
-            if (preview.Length > MaxPreviewLength)
-            {
-                preview = preview.Substring(0, MaxPreviewLength) + Environment.NewLine + "... (" + sql.Length + " characters in total)";
-            }
-
-            var message = new StringBuilder();
-            if (!string.IsNullOrWhiteSpace(reason)) message.AppendLine(reason.Trim()).AppendLine();
-            message.Append("Server / database: ").AppendLine(target).AppendLine();
-            message.AppendLine(preview).AppendLine();
-            message.Append("Run it now? Changes are committed.");
-
+            // A message box can't scroll and grows past the screen with a long script, so the SQL goes in a resizable dialog.
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-            var answer = VsShellUtilities.ShowMessageBox(ServiceProvider.GlobalProvider, message.ToString(), "SSMS Claude Chat - " + title,
-                OLEMSGICON.OLEMSGICON_WARNING, OLEMSGBUTTON.OLEMSGBUTTON_YESNO, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_SECOND);
-            if (answer != IdYes)
+            var dialog = new ApprovalDialog("SSMS Claude Chat - " + title, reason?.Trim(), target, sql.Trim(), "Run it now? Changes are committed.");
+            if (dialog.ShowModal() != true)
             {
                 throw new InvalidOperationException("The user declined to run this SQL. Nothing was executed. Ask them what to change.");
             }
