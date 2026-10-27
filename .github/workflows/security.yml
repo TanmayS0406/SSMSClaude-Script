@@ -422,8 +422,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    # Published to the public blob container next to the downloads (same AZURE_STORAGE_SAS_TOKEN as build.yml).
-    # The docs repo's update-security-report workflow copies it into the site; its README shows banner.svg directly.
+    # Published to the private downloads container next to the setups (same AZURE_STORAGE_SAS_TOKEN as build.yml).
+    # The download function serves the four files at /security/{file}; the docs repo's update-security-report
+    # workflow copies them from there into the site, and its README shows the site's copy of banner.svg.
     env:
       AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
     steps:
