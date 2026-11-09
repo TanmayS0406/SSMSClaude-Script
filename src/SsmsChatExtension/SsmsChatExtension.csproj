@@ -60,10 +60,14 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Database\BenchmarkPlan.cs" />
+    <Compile Include="Database\ProcedureTuneRequest.cs" />
     <Compile Include="Database\ReadOnlySql.cs" />
     <Compile Include="Database\SchemaDiagram.cs" />
     <Compile Include="Database\SqlExecutor.cs" />
+    <Compile Include="Database\SqlObjectName.cs" />
     <Compile Include="Database\SsmsConnection.cs" />
+    <Compile Include="Database\StoredProcedureCatalog.cs" />
     <Compile Include="Diagrams\DiagramViewer.cs" />
     <Compile Include="Editor\SsmsEditor.cs" />
     <Compile Include="Editor\SsmsObjectExplorer.cs" />
@@ -96,6 +100,9 @@
     <Compile Include="UI\ChatToolWindow.cs" />
     <Compile Include="UI\ChatViewModel.cs" />
     <Compile Include="UI\InverseBoolToVisibilityConverter.cs" />
+    <Compile Include="UI\ProcedureTuneDialog.xaml.cs">
+      <DependentUpon>ProcedureTuneDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="UI\ProjectLinks.cs" />
     <Compile Include="UI\RelayCommand.cs" />
   </ItemGroup>
@@ -121,6 +128,10 @@
     <!-- Floating patch versions; packages.lock.json records the 17.9.x build in use (Dependabot bumps it). -->
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.*" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.5.*" />
+    <!-- The VS SDK pins MessagePack 2.5.192 (12 advisories, CVE-2026-48109 and CVE-2026-48506 high). SSMS supplies the
+         assembly at run time, so like the SDK this is compile-time only; the reference just lifts the resolved version
+         to the patched release. -->
+    <PackageReference Include="MessagePack" Version="2.5.303" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup>
     <Page Include="UI\ApprovalDialog.xaml">
@@ -128,6 +139,10 @@
       <SubType>Designer</SubType>
     </Page>
     <Page Include="UI\DiagramDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="UI\ProcedureTuneDialog.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>

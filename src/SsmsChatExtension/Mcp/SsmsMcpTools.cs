@@ -39,7 +39,7 @@ namespace SsmsChatExtension.Mcp
                 return "Tools for the SQL Server Management Studio session the user is chatting from. "
                      + "Database tools use the connection of the active query window. run_query is always read-only; "
                      + "execute_sql and execute_query_window can change the database and may need the user's approval in SSMS. "
-                     + "replace_query_window and open_new_query_window only change the editor text.";
+                     + "replace_query_window, open_new_query_window and create_benchmark_plan only change the editor text.";
             }
         }
 
@@ -173,7 +173,71 @@ namespace SsmsChatExtension.Mcp
                 Tool("open_new_query_window",
                     "Open a new SSMS query window (connected like the active one) containing the given script. It is not executed.",
                     new JObject { ["text"] = Str("The script to put in the new window.") },
-                    "text")
+                    "text"),
+
+                Tool("create_benchmark_plan",
+                    "Open a before / after performance test plan for stored procedures you optimized in a new SSMS query window. It is not executed: the user reads it and presses Execute. "
+                    + "The script times each original procedure and its optimized copy over repeated runs (elapsed time, CPU time, logical reads), checks that both return the same rows, "
+                    + "and reports time saved %, speed-up, a t statistic and a 95% confidence interval. The original procedures are never changed. "
+                    + "Write each optimized copy under a NEW name ending in _Optimized, pick realistic call_arguments by looking at the data, and call this once for all procedures.",
+                    new JObject
+                    {
+                        ["title"] = Str("Short title for the script header, for example 'Tune order procedures'."),
+                        ["database"] = Str("Database name. Default: the connection's current database."),
+                        ["procedures"] = new JObject
+                        {
+                            ["type"] = "array",
+                            ["description"] = "The procedures to benchmark, at most " + BenchmarkPlan.MaxProcedures + ".",
+                            ["items"] = new JObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JObject
+                                {
+                                    ["name"] = Str("The original procedure, schema-qualified, for example dbo.usp_PlaceOrder."),
+                                    ["optimized_name"] = Str("Name of the optimized copy; must end in _Optimized. Default: the original name plus _Optimized."),
+                                    ["optimized_definition"] = Str("The complete CREATE OR ALTER PROCEDURE statement that creates optimized_name: same parameters, same result sets and same side effects as the original. One batch, no GO lines."),
+                                    ["call_arguments"] = Str("The argument list of the EXEC used for both versions, for example @CustomerId = 42, @From = '2025-01-01'. Realistic values from the data. No comments or semicolons."),
+                                    ["changes"] = Str("What you changed and why, one short line per change; shown in the script header."),
+                                    ["modifies_data"] = new JObject { ["type"] = "boolean", ["description"] = "True when the procedure inserts, updates or deletes data." }
+                                },
+                                ["required"] = new JArray("name", "optimized_definition")
+                            }
+                        },
+                        ["supporting_changes"] = new JObject
+                        {
+                            ["type"] = "array",
+                            ["description"] = "Changes both versions depend on, such as an index. Applied between the BEFORE and AFTER runs, so their effect is measured. "
+                                              + "Write apply_sql and undo_sql so they can run twice (IF NOT EXISTS, CREATE ... WITH (DROP_EXISTING = ON), DROP ... IF EXISTS). "
+                                              + "An index also costs writes: add the procedures that write to the same table to the benchmark.",
+                            ["items"] = new JObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JObject
+                                {
+                                    ["description"] = Str("What the change is and why."),
+                                    ["apply_sql"] = Str("T-SQL that applies it. GO lines are allowed."),
+                                    ["undo_sql"] = Str("T-SQL that reverses it; listed in the cleanup block of the script.")
+                                },
+                                ["required"] = new JArray("description", "apply_sql")
+                            }
+                        },
+                        ["runs"] = new JObject
+                        {
+                            ["type"] = "integer",
+                            ["description"] = "Timed runs per procedure and version, " + BenchmarkPlan.MinRuns + "-" + BenchmarkPlan.MaxRuns + ". Default " + BenchmarkPlan.DefaultRuns + "."
+                        },
+                        ["warmup_runs"] = new JObject
+                        {
+                            ["type"] = "integer",
+                            ["description"] = "Runs before the timed ones, 0-" + BenchmarkPlan.MaxWarmupRuns + ". Default " + BenchmarkPlan.DefaultWarmupRuns + "."
+                        },
+                        ["rollback_each_run"] = new JObject
+                        {
+                            ["type"] = "boolean",
+                            ["description"] = "Wrap every run in BEGIN TRAN ... ROLLBACK so data changes are undone. Default true."
+                        }
+                    },
+                    "procedures")
             };
         }
 
@@ -195,6 +259,7 @@ namespace SsmsChatExtension.Mcp
                 case "get_query_window": return await GetQueryWindowAsync();
                 case "replace_query_window": return await ReplaceQueryWindowAsync(arguments);
                 case "open_new_query_window": return await OpenNewQueryWindowAsync(arguments);
+                case "create_benchmark_plan": return await CreateBenchmarkPlanAsync(arguments);
                 default: throw new InvalidOperationException("Unknown tool: " + name);
             }
         }
@@ -531,6 +596,103 @@ namespace SsmsChatExtension.Mcp
             var ok = await SsmsEditor.OpenNewQueryAsync((string)arguments["text"] ?? string.Empty);
             return ok ? "Opened a new query window with the script." : "Could not open a new query window.";
         }
+
+        /// <summary>
+        /// Checks the procedures against the database, builds the benchmark script and opens it in a new query window.
+        /// Nothing is executed, so it needs no approval, like open_new_query_window.
+        /// </summary>
+        private async Task<string> CreateBenchmarkPlanAsync(JObject arguments)
+        {
+            var request = new BenchmarkRequest
+            {
+                Title = (string)arguments["title"],
+                Database = (string)arguments["database"],
+                Runs = (int?)arguments["runs"] ?? BenchmarkPlan.DefaultRuns,
+                WarmupRuns = (int?)arguments["warmup_runs"] ?? BenchmarkPlan.DefaultWarmupRuns,
+                RollbackEachRun = (bool?)arguments["rollback_each_run"] ?? true
+            };
+            foreach (var item in (arguments["procedures"] as JArray ?? new JArray()).OfType<JObject>())
+            {
+                request.Procedures.Add(new BenchmarkProcedure
+                {
+                    Name = (string)item["name"],
+                    OptimizedName = (string)item["optimized_name"],
+                    OptimizedDefinition = (string)item["optimized_definition"],
+                    Arguments = (string)item["call_arguments"],
+                    Changes = (string)item["changes"],
+                    ModifiesData = (bool?)item["modifies_data"] ?? false
+                });
+            }
+            foreach (var item in (arguments["supporting_changes"] as JArray ?? new JArray()).OfType<JObject>())
+            {
+                request.SupportingChanges.Add(new BenchmarkChange
+                {
+                    Description = (string)item["description"],
+                    ApplySql = (string)item["apply_sql"],
+                    UndoSql = (string)item["undo_sql"]
+                });
+            }
+
+            var connection = await GetConnectionAsync();
+            var script = await WithConnectionAsync(connection, request.Database, c =>
+            {
+                request.Database = c.Database;
+                CheckProcedures(c, request);
+                return BenchmarkPlan.Build(request, DateTime.Now);
+            });
+
+            if (!await SsmsEditor.OpenNewQueryAsync(script))
+            {
+                throw new InvalidOperationException("Could not open a new query window. Give the user this script in a sql code block instead:" + Environment.NewLine + script);
+            }
+
+            var replaced = request.Procedures.Where(p => p.OptimizedExists)
+                .Select(p => string.IsNullOrWhiteSpace(p.OptimizedName) ? p.Name + BenchmarkPlan.OptimizedSuffix : p.OptimizedName)
+                .ToList();
+            return "Opened the benchmark plan for " + request.Procedures.Count + (request.Procedures.Count == 1 ? " procedure" : " procedures")
+                   + " in " + request.Database + " in a new query window (" + script.Split('\n').Length + " lines). Nothing was executed. "
+                   + "Each procedure runs " + request.WarmupRuns + " warm-up + " + request.Runs + " timed times before and after, "
+                   + (request.RollbackEachRun ? "every run rolled back in a transaction." : "with the runs NOT rolled back.")
+                   + (replaced.Count > 0 ? " It replaces the existing " + string.Join(", ", replaced) + "." : string.Empty)
+                   + " Tell the user to switch on Query Options > Results > Grid > 'Discard results after execution', read the script and press Execute; "
+                   + "the first result grid shows time saved %, speed-up, the t statistic, the 95% confidence interval and whether the results match. "
+                   + "The cleanup block at the end of the script removes the _Optimized copies and the supporting changes. You have not measured anything yourself, so do not quote numbers.";
+        }
+
+        /// <summary>Every original must exist as a stored procedure; remembers which optimized copies already exist (the plan replaces them).</summary>
+        private static void CheckProcedures(IDbConnection connection, BenchmarkRequest request)
+        {
+            foreach (var procedure in request.Procedures)
+            {
+                SqlObjectName original;
+                try
+                {
+                    original = SqlObjectName.Parse(procedure.Name);
+                }
+                catch (ArgumentException)
+                {
+                    continue; // Build reports the bad name
+                }
+                if (ExecuteScalar(connection, ProcedureExists, original.Quoted) == null)
+                {
+                    throw new ArgumentException("Stored procedure " + original + " was not found in " + request.Database + ". Check the name with list_objects.");
+                }
+
+                try
+                {
+                    var optimized = string.IsNullOrWhiteSpace(procedure.OptimizedName)
+                        ? SqlObjectName.FromParts(original.Schema, original.Name + BenchmarkPlan.OptimizedSuffix)
+                        : SqlObjectName.Parse(procedure.OptimizedName);
+                    procedure.OptimizedExists = ExecuteScalar(connection, ProcedureExists, optimized.Quoted) != null;
+                }
+                catch (ArgumentException)
+                {
+                    // Build reports the bad name
+                }
+            }
+        }
+
+        private const string ProcedureExists = "SELECT CASE WHEN OBJECT_ID(@name, N'P') IS NULL THEN NULL ELSE 1 END";
 
         // ---- schema helpers ----
 

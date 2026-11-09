@@ -107,7 +107,9 @@ namespace SsmsChatExtension.Services.Claude
             {
                 if (File.Exists(FilePath))
                 {
-                    return JsonConvert.DeserializeObject<ClaudeSettings>(File.ReadAllText(FilePath)) ?? new ClaudeSettings();
+                    var settings = JsonConvert.DeserializeObject<ClaudeSettings>(File.ReadAllText(FilePath)) ?? new ClaudeSettings();
+                    settings.UpgradeProtection();
+                    return settings;
                 }
             }
             catch
@@ -123,10 +125,14 @@ namespace SsmsChatExtension.Services.Claude
             File.WriteAllText(FilePath, JsonConvert.SerializeObject(this, Formatting.Indented));
         }
 
+        // Application-specific entropy: without it, any other program running as the same Windows user can call
+        // ProtectedData.Unprotect on the stored value. Not a secret (DPAPI's user key is), it just binds the blob to this extension.
+        private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("SsmsChatExtension.ConnectionString.v1");
+
         private static string Protect(string value)
         {
             if (string.IsNullOrEmpty(value)) return string.Empty;
-            var bytes = ProtectedData.Protect(Encoding.UTF8.GetBytes(value), null, DataProtectionScope.CurrentUser);
+            var bytes = ProtectedData.Protect(Encoding.UTF8.GetBytes(value), Entropy, DataProtectionScope.CurrentUser);
             return Convert.ToBase64String(bytes);
         }
 
@@ -135,12 +141,41 @@ namespace SsmsChatExtension.Services.Claude
             if (string.IsNullOrEmpty(value)) return string.Empty;
             try
             {
-                var bytes = ProtectedData.Unprotect(Convert.FromBase64String(value), null, DataProtectionScope.CurrentUser);
-                return Encoding.UTF8.GetString(bytes);
+                var bytes = Convert.FromBase64String(value);
+                try
+                {
+                    return Encoding.UTF8.GetString(ProtectedData.Unprotect(bytes, Entropy, DataProtectionScope.CurrentUser));
+                }
+                catch (CryptographicException)
+                {
+                    // Written by 1.4.x and earlier, which protected it without entropy; Load() re-protects it.
+                    return Encoding.UTF8.GetString(ProtectedData.Unprotect(bytes, null, DataProtectionScope.CurrentUser));
+                }
             }
             catch
             {
                 return string.Empty;
+            }
+        }
+
+        /// <summary>Re-protects a connection string saved without entropy (an earlier version) and saves the file.</summary>
+        private void UpgradeProtection()
+        {
+            if (string.IsNullOrEmpty(ProtectedConnectionString)) return;
+            try
+            {
+                ProtectedData.Unprotect(Convert.FromBase64String(ProtectedConnectionString), Entropy, DataProtectionScope.CurrentUser);
+            }
+            catch (CryptographicException)
+            {
+                var plain = Unprotect(ProtectedConnectionString);
+                if (plain.Length == 0) return;
+                ConnectionStringOverride = plain;
+                try { Save(); } catch (IOException) { /* read-only profile: it is upgraded next time */ }
+            }
+            catch (FormatException)
+            {
+                // Not base64: nothing to upgrade.
             }
         }
     }

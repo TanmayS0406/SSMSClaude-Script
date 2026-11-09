@@ -43,6 +43,32 @@ so treat it as a strong default rather than a security boundary.)
     reason (review them - they are guesses) and the views / procedures / functions that read other databases.
   - Large selections are trimmed to 200 tables (tables with relationships first), and above 40 tables only key
     columns are shown. Claude can do the same with `show_database_diagram` (one or more databases).
+- **One-click procedure tuning with a before / after benchmark**: the **Tune procedures** (lightning bolt) button
+  lists the stored procedures of the active connection's database, with executions, average time and logical reads
+  from the plan cache (`sys.dm_exec_procedure_stats`, when your login may read it). Tick as many as you like (up to
+  10 per run; **Slowest 5** picks the ones that used the most time), choose the number of timed runs and click
+  **Tune and benchmark**. Claude reads each procedure and its dependencies, gathers evidence with read-only
+  queries, writes an optimized copy named `<name>_Optimized` that returns the same results (the original is never
+  changed) and calls `create_benchmark_plan`, which opens a **test plan in a new query window**. The plan is a
+  script you read and run with F5; nothing runs until you do:
+  - Every procedure and its copy run 2 warm-up + N timed times (no supporting change: alternating run by run, so
+    drift of the machine hits both equally; with a supporting change such as an index: all *before* runs, then
+    the change is applied, then all *after* runs). Each run records elapsed time, CPU time and logical reads
+    from `sys.dm_exec_requests`.
+  - **Result grid**: mean before and after, *time saved %* = (before - after) / before x 100, *speed-up* =
+    before / after, the same for logical reads and CPU, Welch's *t* = (mean<sub>b</sub> - mean<sub>a</sub>) /
+    sqrt(sd<sub>b</sub>^2 / n<sub>b</sub> + sd<sub>a</sub>^2 / n<sub>a</sub>), the 95% confidence interval of the time saved
+    (difference +/- 1.96 x SE) and a verdict: *FASTER* / *SLOWER* needs |t| >= 2 **and** a change of at least 5%;
+    anything smaller is *NO MEANINGFUL DIFFERENCE*. More grids show mean / median / SD / min / max, an overall
+    total, errors and every raw run.
+  - **Result check**: both versions run once more into table variables and their rows are compared (same rows,
+    same order). A copy that returns different rows is flagged *DO NOT USE - the results differ*, however fast it is.
+  - Safety: every run is wrapped in `BEGIN TRAN ... ROLLBACK` by default; optimized copies must be named
+    `*_Optimized`, so a plan can never overwrite another procedure; a cleanup block at the end of the script
+    drops the copies and undoes supporting changes. Switch on *Query Options > Results > Grid > Discard results
+    after execution* before running, and use a test copy for procedures that change data (rollback does not undo
+    mail, files, linked servers or sequence values). Needs SQL Server 2016 SP1 or later.
+  - Claude cannot run procedures itself, so it never quotes timings: the numbers come from your run of the plan.
 - **Runs SQL for you**: `execute_sql` runs any script (INSERT / UPDATE / DELETE, CREATE / ALTER, EXEC, `GO`
   batches), commits it and gives Claude the results; `execute_query_window` presses F5 on the active query
   window so you see the results grid in SSMS. What happens depends on **Settings > Let Claude run SQL that
@@ -104,7 +130,8 @@ SSMS Claude Chat window ──stdin──▶ claude -p --output-format stream-js
   every SSMS session.
 - Database tools use the connection of the active query window, created by SSMS itself (Windows, SQL and
   Microsoft Entra logins all work). If that is not possible, set a **connection string override** in Settings
-  (stored DPAPI-encrypted for your Windows user).
+  (stored DPAPI-encrypted for your Windows user, with an extension-specific entropy value so other programs running as
+  you cannot decrypt it by calling DPAPI blindly; a value saved by an earlier version is re-encrypted on first load).
 - `run_query` is read-only by design: statements that write, `EXEC`, transactions, `USE`, `OPENROWSET` and similar
   are rejected before they run, and every query also runs inside a transaction that is always rolled back,
   with a 30 second timeout and a row limit.
@@ -247,7 +274,7 @@ ChatServiceProvider.Current = new EchoChatService();
 | `src/SsmsChatExtension/Services/` | `IChatService`, the echo stub, the message models and the chat history store |
 | `src/SsmsChatExtension/Services/Claude/` | Claude Code CLI wrapper (sign-in, status), the chat service, settings |
 | `src/SsmsChatExtension/Mcp/` | Loopback MCP server and the `ssms` tools Claude calls |
-| `src/SsmsChatExtension/Database/` | Active query window connection (via SSMS internals), the read-only query runner and the `GO`-aware executor |
+| `src/SsmsChatExtension/Database/` | Active query window connection (via SSMS internals), the read-only query runner and the `GO`-aware executor; the procedure list (`StoredProcedureCatalog`), the before / after benchmark script generator (`BenchmarkPlan`) and the safe object-name parser it uses (`SqlObjectName`) |
 | `src/SsmsChatExtension/Diagrams/` | Mermaid diagram pages opened by `show_diagram` |
 | `src/SsmsChatExtension/Editor/SsmsEditor.cs` | Reads / writes / opens / executes query windows through DTE |
 | `src/SsmsChatExtension/Editor/SsmsObjectExplorer.cs` | Refreshes Object Explorer and the IntelliSense cache after schema changes |

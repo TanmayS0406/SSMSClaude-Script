@@ -62,6 +62,7 @@ namespace SsmsChatExtension.UI
             OpenConversationCommand = new RelayCommand(p => OpenConversation(p as ChatConversation), p => !IsBusy && p is ChatConversation);
             DeleteConversationCommand = new RelayCommand(p => DeleteConversation(p as ChatConversation), p => p is ChatConversation);
             DatabaseDiagramCommand = new RelayCommand(async _ => await ShowDatabaseDiagramAsync(), _ => !IsCreatingDiagram);
+            TuneProceduresCommand = new RelayCommand(async _ => await TuneProceduresAsync(), _ => !IsBusy && !IsLoadingProcedures);
             History = new ObservableCollection<ChatConversation>();
             InsertCommand = new RelayCommand(async p => await InsertAsync(p as ChatMessage), p => p is ChatMessage m && !string.IsNullOrWhiteSpace(m.Text));
             CopyCommand = new RelayCommand(p => Copy(p as ChatMessage), p => p is ChatMessage m && !string.IsNullOrWhiteSpace(m.Text));
@@ -90,6 +91,7 @@ namespace SsmsChatExtension.UI
         public ICommand OpenConversationCommand { get; }
         public ICommand DeleteConversationCommand { get; }
         public ICommand DatabaseDiagramCommand { get; }
+        public ICommand TuneProceduresCommand { get; }
         public ICommand InsertCommand { get; }
         public ICommand AttachFileCommand { get; }
         public ICommand ScreenshotCommand { get; }
@@ -114,6 +116,16 @@ namespace SsmsChatExtension.UI
             get { return _isCreatingDiagram; }
             private set { if (_isCreatingDiagram != value) { _isCreatingDiagram = value; OnPropertyChanged(); } }
         }
+
+        private bool _isLoadingProcedures;
+
+        /// <summary>True while the procedure list is being read and the picker is open.</summary>
+        public bool IsLoadingProcedures
+        {
+            get { return _isLoadingProcedures; }
+            private set { if (_isLoadingProcedures != value) { _isLoadingProcedures = value; OnPropertyChanged(); } }
+        }
+
         public ICommand CopyCommand { get; }
 
         /// <summary>Raised whenever the message list grew or a reply got longer, so the view can scroll down.</summary>
@@ -143,14 +155,22 @@ namespace SsmsChatExtension.UI
             private set { if (_statusText != value) { _statusText = value; OnPropertyChanged(); } }
         }
 
-        private async Task SendAsync()
+        private Task SendAsync()
         {
             var text = (InputText ?? string.Empty).Trim();
             var attachments = PendingAttachments.ToList();
-            if ((text.Length == 0 && attachments.Count == 0) || IsBusy) return;
+            if ((text.Length == 0 && attachments.Count == 0) || IsBusy) return Task.CompletedTask;
 
             InputText = string.Empty;
             PendingAttachments.Clear();
+            return SendMessageAsync(text, attachments, IncludeEditorContext);
+        }
+
+        /// <summary>Adds <paramref name="text"/> to the chat as the user's message and streams Claude's reply.</summary>
+        private async Task SendMessageAsync(string text, List<ChatAttachment> attachments, bool includeEditorContext)
+        {
+            if (IsBusy) return;
+
             StatusText = string.Empty;
             IsBusy = true;
 
@@ -169,7 +189,7 @@ namespace SsmsChatExtension.UI
             try
             {
                 string editorContext = null;
-                if (IncludeEditorContext)
+                if (includeEditorContext)
                 {
                     try { editorContext = await SsmsEditor.GetSelectedOrAllTextAsync(); }
                     catch { /* no active query window - just chat without context */ }
@@ -503,6 +523,71 @@ namespace SsmsChatExtension.UI
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 IsCreatingDiagram = false;
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+
+        /// <summary>
+        /// Tune procedures button: pick any number of stored procedures in one dialog, then ask Claude to optimize them and
+        /// open a before / after benchmark plan in a new query window (see the create_benchmark_plan tool).
+        /// </summary>
+        private async Task TuneProceduresAsync()
+        {
+            var request = await PickProceduresAsync();
+            if (request == null) return;
+
+            await SendMessageAsync(request.BuildMessage(), new List<ChatAttachment>(), includeEditorContext: false);
+        }
+
+        private async Task<ProcedureTuneRequest> PickProceduresAsync()
+        {
+            IsLoadingProcedures = true;
+            StatusText = "Reading stored procedures...";
+            try
+            {
+                var connection = await SsmsConnection.GetAsync(ClaudeSettings.Load().ConnectionStringOverride);
+                if (connection == null)
+                {
+                    StatusText = "Click into a connected query window first (or set a connection string in Settings).";
+                    return null;
+                }
+
+                await TaskScheduler.Default;
+                IReadOnlyList<ProcedureInfo> procedures;
+                bool hasStatistics;
+                string database;
+                using (var db = connection.Factory())
+                {
+                    if (db.State != System.Data.ConnectionState.Open) db.Open();
+                    database = db.Database;
+                    procedures = StoredProcedureCatalog.List(db, out hasStatistics);
+                }
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                if (procedures.Count == 0)
+                {
+                    StatusText = "There are no stored procedures in " + database + ".";
+                    return null;
+                }
+
+                var dialog = new ProcedureTuneDialog(connection.Server, database, procedures, hasStatistics);
+                if (dialog.ShowModal() != true)
+                {
+                    StatusText = string.Empty;
+                    return null;
+                }
+                return dialog.Request;
+            }
+            catch (Exception ex)
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                StatusText = "Could not list the stored procedures: " + ex.Message;
+                return null;
+            }
+            finally
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                IsLoadingProcedures = false;
                 CommandManager.InvalidateRequerySuggested();
             }
         }
