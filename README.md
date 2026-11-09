@@ -44,12 +44,15 @@ so treat it as a strong default rather than a security boundary.)
   - Large selections are trimmed to 200 tables (tables with relationships first), and above 40 tables only key
     columns are shown. Claude can do the same with `show_database_diagram` (one or more databases).
 - **One-click procedure tuning with a before / after benchmark**: the **Tune procedures** (lightning bolt) button
-  opens a dialog with a **Database** drop-down (any database on the server; your query window's database is
-  preselected) and a **Stored procedures** drop-down that lists the procedures of that database, with executions,
-  average time and logical reads from the plan cache (`sys.dm_exec_procedure_stats`, when your login may read it).
-  Tick as many as you like (up to 10 per run; **Slowest 5** picks the ones that used the most time; the filter box
-  narrows a long list), choose the number of timed runs and click
-  **Tune and benchmark**. Claude reads each procedure and its dependencies, gathers evidence with read-only
+  opens a dialog with a **Database** drop-down (the online databases your login can open; your query window's
+  database is preselected, and system databases are hidden unless one is the current database) and a **Stored
+  procedures** drop-down. The drop-down lists the procedures of the chosen database, with executions, average time
+  and logical reads from the plan cache (`sys.dm_exec_procedure_stats`, when your login may read it), and is read
+  again whenever you pick another database. Tick as many as you like (up to 10 per run, all from that database;
+  **Slowest 5** picks the ones that used the most time; the filter box narrows a long list; procedures created
+  `WITH ENCRYPTION` are greyed out because their text cannot be read), choose the number of timed runs and click
+  **Tune and benchmark**. Claude is told which database you picked, so this works even when your query window is
+  connected to another one. It reads each procedure and its dependencies, gathers evidence with read-only
   queries, writes an optimized copy named `<name>_Optimized` that returns the same results (the original is never
   changed) and calls `create_benchmark_plan`, which opens a **test plan in a new query window**. The plan is a
   script you read and run with F5; nothing runs until you do:
@@ -75,8 +78,9 @@ so treat it as a strong default rather than a security boundary.)
   batches), commits it and gives Claude the results; `execute_query_window` presses F5 on the active query
   window so you see the results grid in SSMS. What happens depends on **Settings > Let Claude run SQL that
   changes the database**:
-  - *Ask me before each change* (default): SSMS shows the SQL, the server / database and Claude's reason;
-    nothing runs unless you click **Yes** (No is the default button).
+  - *Ask me before each change* (default): SSMS opens a dialog with Claude's reason, the server / database and the
+    full SQL in a scrollable box (resize the dialog, switch *Wrap long lines* off, or use **Copy SQL** to review it
+    elsewhere); nothing runs unless you click **Yes** (No is the default button, and Esc declines).
   - *Off*: both tools refuse; Claude can still explore with `run_query` and put scripts in the editor.
   - *Allow without asking*: runs immediately. Only use this against development databases.
 - **Object Explorer stays current**: after `execute_sql` creates, alters, drops or renames objects, the database
@@ -106,6 +110,9 @@ so treat it as a strong default rather than a security boundary.)
   colour, and every other brush is blended from those. Toolbar icons are Segoe Fluent Icons / Segoe MDL2 Assets glyphs.
 - **About links**: the bottom of Settings links to the documentation, website, issue tracker and sponsor page
   (`UI/ProjectLinks.cs`).
+- **Run status**: under each reply a status line shows what Claude is doing with the elapsed time (*Thinking…*,
+  *Running SSMS describe_object: dbo.Orders…*, *Writing…*) and ends as *Done in 12s*, *Stopped after 5s* or
+  *Failed after 3s*.
 - Tool activity shows in the reply as `› SSMS describe_object: dbo.Orders`, `› Edit: C:\repo\proc.sql`, and so on.
 - Still there: streaming replies, Stop, *Include selected / current query as context*, *Insert into query window*, Copy.
 
@@ -272,11 +279,11 @@ ChatServiceProvider.Current = new EchoChatService();
 | `src/SsmsChatExtension/SsmsChatPackage.cs` | Package entry point, registers the View menu command and the tool window |
 | `src/SsmsChatExtension/VSCommandTable.vsct`, `PackageIds.cs` | Menu definition and the GUIDs / IDs it uses |
 | `src/SsmsChatExtension/source.extension.vsixmanifest` | VSIX identity and the SSMS install target |
-| `src/SsmsChatExtension/UI/` | WPF chat control, view model, tool window |
+| `src/SsmsChatExtension/UI/` | WPF chat control, view model, tool window and the dialogs (SQL approval, database diagram, procedure tuning) |
 | `src/SsmsChatExtension/Services/` | `IChatService`, the echo stub, the message models and the chat history store |
 | `src/SsmsChatExtension/Services/Claude/` | Claude Code CLI wrapper (sign-in, status), the chat service, settings |
 | `src/SsmsChatExtension/Mcp/` | Loopback MCP server and the `ssms` tools Claude calls |
-| `src/SsmsChatExtension/Database/` | Active query window connection (via SSMS internals), the read-only query runner and the `GO`-aware executor; the procedure list (`StoredProcedureCatalog`), the before / after benchmark script generator (`BenchmarkPlan`) and the safe object-name parser it uses (`SqlObjectName`) |
+| `src/SsmsChatExtension/Database/` | Active query window connection (via SSMS internals), the read-only query runner and the `GO`-aware executor; the ER diagram builder (`SchemaDiagram`); for procedure tuning, the per-database procedure list (`StoredProcedureCatalog`), the request and chat message the dialog produces (`ProcedureTuneRequest`), the before / after benchmark script generator (`BenchmarkPlan`) and the safe object-name parser it uses (`SqlObjectName`) |
 | `src/SsmsChatExtension/Diagrams/` | Mermaid diagram pages opened by `show_diagram` |
 | `src/SsmsChatExtension/Editor/SsmsEditor.cs` | Reads / writes / opens / executes query windows through DTE |
 | `src/SsmsChatExtension/Editor/SsmsObjectExplorer.cs` | Refreshes Object Explorer and the IntelliSense cache after schema changes |
@@ -292,7 +299,13 @@ ChatServiceProvider.Current = new EchoChatService();
   terminal and type `/login`, then click **Refresh**.
 - **"SSMS database tools unavailable"** or *No database connection*: click into a connected query window
   before sending, or set a connection string override.
-
+- **Tune procedures: "Slowest 5" is greyed out:** the login cannot read the plan cache statistics (it needs
+  `VIEW SERVER STATE`, or `VIEW SERVER PERFORMANCE STATE` on SQL Server 2022), or nothing has run since the plans were
+  cached. You can still tick procedures by hand.
+- **Tune procedures: a database is missing from the drop-down:** only online databases the login can open are listed,
+  and system databases are hidden unless one is the connection's current database.
+- **Tune procedures: "Could not read the stored procedures of ...":** the text after the colon is SQL Server's reason
+  (for example no access to that database). Pick another database, or connect with a login that can read it.
 - **No "SSMS Claude Chat" in the View menu:** run `Ssms.exe /updateconfiguration` once from the SSMS `Common7\IDE`
   folder to rebuild the extension cache, then restart SSMS.
 - **Install fails:** open the newest `VSIXInstaller_*.log` in `%TEMP%`, or run setup with `/LOG="%TEMP%\setup.log"`.
@@ -300,7 +313,7 @@ ChatServiceProvider.Current = new EchoChatService();
 - The active-window connection comes from SSMS internals (`ServiceCache.ScriptFactory`, `UIConnectionInfoUtil`)
   read via reflection; if a future SSMS moves them, the connection string override still works.
 - Microsoft has not published a stable SSMS extensibility SDK, so a future SSMS update may need small changes
-  (the `Microsoft.VisualStudio.Ssms` install target in the manifest and the 17.9.x SDK package versions are the first places to look).
+  (the `Microsoft.VisualStudio.Ssms` install target in the manifest and the 17.14.x SDK package versions are the first places to look).
 
 The publisher name ("Tanmay Seth") lives in `source.extension.vsixmanifest`, `AssemblyInfo.cs` and `installer/SsmsClaudeChat.iss`.
 
