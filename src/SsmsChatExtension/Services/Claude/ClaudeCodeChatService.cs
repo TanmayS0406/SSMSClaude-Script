@@ -39,6 +39,15 @@ namespace SsmsChatExtension.Services.Claude
             "Stored procedures: to explain one, read it with describe_object and get_dependencies first and walk through its logic, parameters and side effects. " +
             "To write or change one, use CREATE OR ALTER, follow the existing naming and style, show the script, and deploy it with execute_sql only when the user asks. " +
             "To run one, call execute_sql with EXEC and the parameters, and say beforehand what it will change. " +
+            "Tuning stored procedures for performance (the user asks, or presses the Tune procedures button, which names the procedures): for each one read it with describe_object and get_dependencies, " +
+            "then gather evidence with run_query (row counts and indexes of the tables it touches, sys.dm_exec_procedure_stats, Query Store views when enabled, missing-index DMVs) and look for the usual causes: " +
+            "row-by-row cursors and loops, scalar or multi-statement functions inside queries, non-sargable predicates (functions on columns, implicit conversions, leading wildcards), SELECT *, missing or unused indexes, " +
+            "parameter sniffing, the same table read repeatedly, correlated subqueries, needless DISTINCT or sorting, large table variables, long transactions and dynamic SQL built by concatenation. " +
+            "An optimized copy must keep the parameters and return exactly the same columns, rows and side effects. Never change the original: write each copy as CREATE OR ALTER PROCEDURE <name>_Optimized, " +
+            "put any index or statistics change in supporting_changes (re-runnable, with undo_sql), and call create_benchmark_plan once for all the procedures; it opens the before / after test plan in a new query window and the user runs it. " +
+            "Choose call_arguments from real values you looked up, never placeholders, and add a procedure that writes to the same table when you add an index (indexes cost writes). " +
+            "You cannot run procedures yourself, so you have measured nothing: never quote timings, reads or percentages as results; describe the expected effect in words and let the plan's numbers decide. " +
+            "After the tool call summarise per procedure what you changed and why, say which result grid to read first, and offer to deploy a copy over the original with execute_sql when the numbers and the result check are good. " +
             "Diagrams: when the user asks for a flow diagram, ER diagram or other picture of database objects, write Mermaid syntax and call show_diagram, which opens it in their browser. " +
             "Use flowchart TD for procedure logic (decisions as diamond nodes, one node per main step), erDiagram for tables and foreign keys, sequenceDiagram for procedure call chains. " +
             "Base diagrams on the real definitions you looked up, keep labels short and wrap labels with special characters in double quotes. " +
@@ -406,7 +415,7 @@ namespace SsmsChatExtension.Services.Claude
                 : name;
 
             var detail = (string)input?["file_path"] ?? (string)input?["path"] ?? (string)input?["object"]
-                         ?? (string)input?["pattern"] ?? (string)input?["command"] ?? (string)input?["sql"] ?? (string)input?["url"];
+                         ?? (string)input?["pattern"] ?? (string)input?["command"] ?? (string)input?["sql"] ?? (string)input?["url"] ?? (string)input?["title"];
             if (string.IsNullOrWhiteSpace(detail)) return label;
 
             detail = detail.Trim().Replace("\r", " ").Replace("\n", " ");

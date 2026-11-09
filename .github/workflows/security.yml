@@ -244,9 +244,10 @@ jobs:
           name: sarif-dependencies
           path: sarif
 
-      # Fails on critical only: the high ones today (MessagePack, System.Text.Json, Microsoft.IO.Redist) come in
-      # through Microsoft.VisualStudio.SDK, which is compile-time only (ExcludeAssets="runtime"); SSMS supplies
-      # those assemblies and the VSIX ships none of them. Direct dependencies are held to moderate by NuGet audit.
+      # Fails on critical only: transitive advisories can come in through Microsoft.VisualStudio.SDK, which is
+      # compile-time only (ExcludeAssets="runtime"); SSMS supplies those assemblies and the VSIX ships none of them.
+      # Direct dependencies are held to moderate by NuGet audit, so the MessagePack and Pkcs advisories were fixed by
+      # pinning patched direct references in the two projects.
       - name: Check findings
         shell: pwsh
         run: .github/scripts/Assert-Sarif.ps1 -Path sarif -FailOn critical -Title 'Dependencies (OSV-Scanner, Trivy)'
@@ -312,7 +313,26 @@ jobs:
           for vsix in build/*.vsix; do unzip -q "$vsix" -d "build/unpacked/$(basename "$vsix" .vsix)"; done
           find build -type f -exec ls -l {} +
 
+      # Syft and Grype are downloaded from GitHub releases when each action starts, and that download now and then
+      # answers 502 (the 8 Nov scan failed that way before scanning anything, and the report showed "Failed" for the
+      # installer). Each tool step therefore gets one retry after a pause; a second failure still fails the job.
       - name: SBOM (SPDX)
+        id: sbom-spdx
+        continue-on-error: true
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: build
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom.spdx.json
+          upload-release-assets: false
+
+      - name: Wait before retrying SBOM (SPDX)
+        if: steps.sbom-spdx.outcome == 'failure'
+        run: sleep 60
+
+      - name: SBOM (SPDX), retry
+        if: steps.sbom-spdx.outcome == 'failure'
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: build
@@ -322,6 +342,22 @@ jobs:
           upload-release-assets: false
 
       - name: SBOM (CycloneDX)
+        id: sbom-cdx
+        continue-on-error: true
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: build
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          artifact-name: sbom.cdx.json
+          upload-release-assets: false
+
+      - name: Wait before retrying SBOM (CycloneDX)
+        if: steps.sbom-cdx.outcome == 'failure'
+        run: sleep 60
+
+      - name: SBOM (CycloneDX), retry
+        if: steps.sbom-cdx.outcome == 'failure'
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: build
@@ -332,6 +368,20 @@ jobs:
 
       - name: Grype
         id: grype
+        continue-on-error: true
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          sbom: sbom.spdx.json
+          fail-build: false
+          output-format: sarif
+          output-file: sarif/grype.sarif
+
+      - name: Wait before retrying Grype
+        if: steps.grype.outcome == 'failure'
+        run: sleep 60
+
+      - name: Grype, retry
+        if: steps.grype.outcome == 'failure'
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           sbom: sbom.spdx.json

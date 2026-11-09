@@ -14,8 +14,8 @@ using Newtonsoft.Json.Linq;
 namespace SsmsChatExtension.Mcp
 {
     /// <summary>
-    /// Minimal MCP server (Streamable HTTP transport, JSON responses only) on 127.0.0.1 with a random port and a
-    /// random bearer token, so only the Claude Code process we start (which gets the token) can call it.
+    /// Minimal MCP server (Streamable HTTP transport, JSON responses only) on the loopback interface with a random port
+    /// and a random bearer token, so only the Claude Code process we start (which gets the token) can call it.
     /// A raw TcpListener is used instead of HttpListener because HttpListener needs a URL ACL without admin rights.
     /// </summary>
     internal sealed class McpHttpServer : IDisposable
@@ -43,7 +43,8 @@ namespace SsmsChatExtension.Mcp
 
         public string Url
         {
-            get { return "http://127.0.0.1:" + Port + "/mcp"; }
+            // Loopback only, by design: the listener is bound to IPAddress.Loopback and every call needs the bearer token.
+            get { return "http://127.0.0.1:" + Port + "/mcp"; } // DevSkim: ignore DS162092
         }
 
         public void Dispose()
