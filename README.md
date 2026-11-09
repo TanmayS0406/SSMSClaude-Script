@@ -44,9 +44,11 @@ so treat it as a strong default rather than a security boundary.)
   - Large selections are trimmed to 200 tables (tables with relationships first), and above 40 tables only key
     columns are shown. Claude can do the same with `show_database_diagram` (one or more databases).
 - **One-click procedure tuning with a before / after benchmark**: the **Tune procedures** (lightning bolt) button
-  lists the stored procedures of the active connection's database, with executions, average time and logical reads
-  from the plan cache (`sys.dm_exec_procedure_stats`, when your login may read it). Tick as many as you like (up to
-  10 per run; **Slowest 5** picks the ones that used the most time), choose the number of timed runs and click
+  opens a dialog with a **Database** drop-down (any database on the server; your query window's database is
+  preselected) and a **Stored procedures** drop-down that lists the procedures of that database, with executions,
+  average time and logical reads from the plan cache (`sys.dm_exec_procedure_stats`, when your login may read it).
+  Tick as many as you like (up to 10 per run; **Slowest 5** picks the ones that used the most time; the filter box
+  narrows a long list), choose the number of timed runs and click
   **Tune and benchmark**. Claude reads each procedure and its dependencies, gathers evidence with read-only
   queries, writes an optimized copy named `<name>_Optimized` that returns the same results (the original is never
   changed) and calls `create_benchmark_plan`, which opens a **test plan in a new query window**. The plan is a

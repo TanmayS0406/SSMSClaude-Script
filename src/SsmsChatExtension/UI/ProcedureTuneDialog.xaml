@@ -5,7 +5,7 @@
                        xmlns:vsui="clr-namespace:Microsoft.VisualStudio.PlatformUI;assembly=Microsoft.VisualStudio.Shell.15.0"
                        xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
                        Title="Tune stored procedures"
-                       Width="560" Height="620" MinWidth="440" MinHeight="460"
+                       Width="540" Height="400" MinWidth="440" MinHeight="380"
                        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" ResizeMode="CanResizeWithGrip"
                        Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
                        Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}">
@@ -34,55 +34,111 @@
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
-            <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
-                <Run Text="Database: " /><Run Text="{Binding DatabaseName, Mode=OneWay}" /><Run Text="  on  " /><Run Text="{Binding ServerName, Mode=OneWay}" />
-            </TextBlock>
-            <TextBlock Margin="0,4,0,6" Opacity="0.75" TextWrapping="Wrap"
-                       Text="Tick the procedures to speed up. Claude reads each one, writes an optimized copy next to it (the original is never changed) and opens a before / after benchmark in a new query window." />
-            <DockPanel LastChildFill="True">
-                <Button DockPanel.Dock="Right" Content="None" MinWidth="0" Click="SelectNone_Click" />
-                <Button DockPanel.Dock="Right" Content="Slowest 5" MinWidth="0" Click="SelectSlowest_Click" IsEnabled="{Binding HasStatistics}"
-                        ToolTip="Select the five procedures with the most total execution time since their plans were cached" />
-                <Button DockPanel.Dock="Right" Content="All shown" MinWidth="0" Click="SelectAll_Click"
-                        ToolTip="Select the procedures that match the filter (up to the limit per run)" />
-                <TextBox x:Name="FilterBox" Padding="3" Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged}"
-                         ToolTip="Filter the list" Style="{DynamicResource {x:Static vsshell:VsResourceKeys.TextBoxStyleKey}}" />
-            </DockPanel>
+            <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Text="{Binding ServerName, StringFormat=Server: {0}}" />
+            <TextBlock Margin="0,4,0,10" Opacity="0.75" TextWrapping="Wrap"
+                       Text="Choose a database, then the stored procedures in it to speed up. Claude reads each one, writes an optimized copy next to it (the original is never changed) and opens a before / after benchmark in a new query window." />
         </StackPanel>
 
-        <Border Grid.Row="1" Margin="0,6,0,0" BorderThickness="1"
-                BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}">
-            <!-- A list box (not an items control in a scroll viewer) so only the visible rows are created: databases can have thousands of procedures. -->
-            <ListBox ItemsSource="{Binding View}" ItemContainerStyle="{StaticResource PlainRow}" BorderThickness="0" Background="Transparent"
-                     Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" Padding="6,2"
-                     VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding CanSelect}" HorizontalContentAlignment="Stretch"
-                                  ToolTip="{Binding ToolTip}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Grid.Column="1" Margin="12,0,6,0" Opacity="0.65" Text="{Binding StatsText}" />
-                            </Grid>
-                        </CheckBox>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-        </Border>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="2" Margin="0,10,0,0">
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0" Text="Database:" />
+            <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding Databases}" SelectedItem="{Binding SelectedDatabase}"
+                      ToolTip="The database whose stored procedures are listed. Starts with the one your query window is connected to."
+                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ComboBoxStyleKey}}" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,8,10,0" Text="Stored procedures:" />
+            <Grid Grid.Row="1" Grid.Column="1" Margin="0,8,0,0">
+                <!-- The drop-down: a button that opens a popup. While the popup is open the button ignores the mouse, so the click that
+                     closes the popup (it counts as "outside") does not also reopen it. -->
+                <Button x:Name="ProcedureButton" Click="ProcedureButton_Click" IsEnabled="{Binding CanPickProcedures}"
+                        ToolTip="{Binding ProcedureButtonText}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                            <Setter Property="MinWidth" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="Padding" Value="6,3" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsOpen, ElementName=ProcedurePopup}" Value="True">
+                                    <Setter Property="IsHitTestVisible" Value="False" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <DockPanel LastChildFill="True">
+                        <Path DockPanel.Dock="Right" Margin="8,0,2,0" VerticalAlignment="Center" Data="M 0 0 L 8 0 L 4 5 Z"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        <TextBlock HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" Text="{Binding ProcedureButtonText}" />
+                    </DockPanel>
+                </Button>
+
+                <Popup x:Name="ProcedurePopup" PlacementTarget="{Binding ElementName=ProcedureButton}" Placement="Bottom"
+                       StaysOpen="False" Opened="ProcedurePopup_Opened">
+                    <Border Width="{Binding ActualWidth, ElementName=ProcedureButton}" Height="320" BorderThickness="1" Padding="6"
+                            Background="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBackgroundBrushKey}}"
+                            BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
+                            KeyDown="ProcedurePopup_KeyDown">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <DockPanel Grid.Row="0" LastChildFill="True">
+                                <Button DockPanel.Dock="Right" Content="None" MinWidth="0" Click="SelectNone_Click" />
+                                <Button DockPanel.Dock="Right" Content="Slowest 5" MinWidth="0" Click="SelectSlowest_Click" IsEnabled="{Binding HasStatistics}"
+                                        ToolTip="Select the five procedures with the most total execution time since their plans were cached" />
+                                <Button DockPanel.Dock="Right" Content="All shown" MinWidth="0" Click="SelectAll_Click"
+                                        ToolTip="Select the procedures that match the filter (up to the limit per run)" />
+                                <TextBox x:Name="FilterBox" Padding="3" Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Filter the list" Style="{DynamicResource {x:Static vsshell:VsResourceKeys.TextBoxStyleKey}}" />
+                            </DockPanel>
+
+                            <!-- A list box (not an items control in a scroll viewer) so only the visible rows are created: databases can have thousands of procedures. -->
+                            <ListBox Grid.Row="1" Margin="0,6,0,0" ItemsSource="{Binding View}" ItemContainerStyle="{StaticResource PlainRow}"
+                                     BorderThickness="1" Background="Transparent"
+                                     BorderBrush="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowBorderBrushKey}}"
+                                     Foreground="{DynamicResource {x:Static vsui:EnvironmentColors.ToolWindowTextBrushKey}}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" Padding="6,2"
+                                     VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding CanSelect}" HorizontalContentAlignment="Stretch"
+                                                  ToolTip="{Binding ToolTip}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Margin="12,0,6,0" Opacity="0.65" Text="{Binding StatsText}" />
+                                            </Grid>
+                                        </CheckBox>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+                </Popup>
+            </Grid>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Margin="0,14,0,0">
             <DockPanel LastChildFill="False">
                 <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0" Text="Timed runs per procedure:" />
                 <ComboBox DockPanel.Dock="Left" Width="70" ItemsSource="{Binding RunChoices}" SelectedItem="{Binding Runs}"
@@ -93,7 +149,7 @@
                       Content="Roll back every run in a transaction (keeps procedures that change data from changing it)" />
         </StackPanel>
 
-        <TextBlock Grid.Row="3" Margin="0,8,0,0" Opacity="0.85" TextWrapping="Wrap" Text="{Binding SelectionSummary}" />
+        <TextBlock Grid.Row="3" Margin="0,10,0,0" Opacity="0.85" TextWrapping="Wrap" Text="{Binding SelectionSummary}" />
 
         <StackPanel Grid.Row="4" Margin="0,10,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Tune and benchmark" IsDefault="True" Click="Ok_Click" IsEnabled="{Binding CanTune}" MinWidth="130" />

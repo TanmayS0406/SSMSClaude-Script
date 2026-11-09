@@ -55,7 +55,21 @@ namespace SsmsChatExtension.Database
         }
     }
 
-    /// <summary>Lists the T-SQL stored procedures of the connection's current database.</summary>
+    /// <summary>The procedures of one database, and whether the plan cache statistics could be read for them.</summary>
+    internal sealed class ProcedureListing
+    {
+        public ProcedureListing(IReadOnlyList<ProcedureInfo> procedures, bool hasStatistics)
+        {
+            Procedures = procedures;
+            HasStatistics = hasStatistics;
+        }
+
+        public IReadOnlyList<ProcedureInfo> Procedures { get; }
+
+        public bool HasStatistics { get; }
+    }
+
+    /// <summary>Lists the T-SQL stored procedures of a database.</summary>
     internal static class StoredProcedureCatalog
     {
         // Totals over every cached plan of the procedure. The DMV needs VIEW SERVER STATE (VIEW SERVER PERFORMANCE STATE
@@ -81,8 +95,22 @@ namespace SsmsChatExtension.Database
             "WHERE p.is_ms_shipped = 0 AND p.type = 'P' " +
             "ORDER BY s.name, p.name";
 
+        /// <summary>Opens a connection and lists the procedures of <paramref name="database"/>, ordered by schema and name.</summary>
+        public static ProcedureListing List(Func<IDbConnection> factory, string database)
+        {
+            using (var connection = factory())
+            {
+                if (connection.State != ConnectionState.Open) connection.Open();
+                connection.ChangeDatabase(database);
+
+                bool hasStatistics;
+                var procedures = List(connection, out hasStatistics);
+                return new ProcedureListing(procedures, hasStatistics);
+            }
+        }
+
         /// <summary>The procedures of the connection's current database, ordered by schema and name.</summary>
-        public static IReadOnlyList<ProcedureInfo> List(IDbConnection connection, out bool hasStatistics)
+        private static IReadOnlyList<ProcedureInfo> List(IDbConnection connection, out bool hasStatistics)
         {
             try
             {

@@ -528,8 +528,8 @@ namespace SsmsChatExtension.UI
         }
 
         /// <summary>
-        /// Tune procedures button: pick any number of stored procedures in one dialog, then ask Claude to optimize them and
-        /// open a before / after benchmark plan in a new query window (see the create_benchmark_plan tool).
+        /// Tune procedures button: choose a database and any number of its stored procedures in one dialog, then ask Claude to
+        /// optimize them and open a before / after benchmark plan in a new query window (see the create_benchmark_plan tool).
         /// </summary>
         private async Task TuneProceduresAsync()
         {
@@ -542,7 +542,7 @@ namespace SsmsChatExtension.UI
         private async Task<ProcedureTuneRequest> PickProceduresAsync()
         {
             IsLoadingProcedures = true;
-            StatusText = "Reading stored procedures...";
+            StatusText = "Reading databases...";
             try
             {
                 var connection = await SsmsConnection.GetAsync(ClaudeSettings.Load().ConnectionStringOverride);
@@ -553,24 +553,22 @@ namespace SsmsChatExtension.UI
                 }
 
                 await TaskScheduler.Default;
-                IReadOnlyList<ProcedureInfo> procedures;
-                bool hasStatistics;
-                string database;
+                IReadOnlyList<(string Name, bool IsCurrent)> databases;
                 using (var db = connection.Factory())
                 {
                     if (db.State != System.Data.ConnectionState.Open) db.Open();
-                    database = db.Database;
-                    procedures = StoredProcedureCatalog.List(db, out hasStatistics);
+                    databases = SchemaDiagram.ListDatabases(db);
                 }
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                if (procedures.Count == 0)
+                if (databases.Count == 0)
                 {
-                    StatusText = "There are no stored procedures in " + database + ".";
+                    StatusText = "This login cannot open any database on " + connection.Server + ".";
                     return null;
                 }
 
-                var dialog = new ProcedureTuneDialog(connection.Server, database, procedures, hasStatistics);
+                // The dialog reads the procedures of each database as it is picked.
+                var dialog = new ProcedureTuneDialog(connection.Server, databases, database => StoredProcedureCatalog.List(connection.Factory, database));
                 if (dialog.ShowModal() != true)
                 {
                     StatusText = string.Empty;
@@ -581,7 +579,7 @@ namespace SsmsChatExtension.UI
             catch (Exception ex)
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                StatusText = "Could not list the stored procedures: " + ex.Message;
+                StatusText = "Could not list the databases: " + ex.Message;
                 return null;
             }
             finally

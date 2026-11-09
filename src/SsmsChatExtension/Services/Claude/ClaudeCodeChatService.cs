@@ -39,7 +39,7 @@ namespace SsmsChatExtension.Services.Claude
             "Stored procedures: to explain one, read it with describe_object and get_dependencies first and walk through its logic, parameters and side effects. " +
             "To write or change one, use CREATE OR ALTER, follow the existing naming and style, show the script, and deploy it with execute_sql only when the user asks. " +
             "To run one, call execute_sql with EXEC and the parameters, and say beforehand what it will change. " +
-            "Tuning stored procedures for performance (the user asks, or presses the Tune procedures button, which names the procedures): for each one read it with describe_object and get_dependencies, " +
+            "Tuning stored procedures for performance (the user asks, or presses the Tune procedures button, which names the database and the procedures): pass that database as the database argument of every ssms tool call, because the active query window may be connected to another one; for each procedure read it with describe_object and get_dependencies, " +
             "then gather evidence with run_query (row counts and indexes of the tables it touches, sys.dm_exec_procedure_stats, Query Store views when enabled, missing-index DMVs) and look for the usual causes: " +
             "row-by-row cursors and loops, scalar or multi-statement functions inside queries, non-sargable predicates (functions on columns, implicit conversions, leading wildcards), SELECT *, missing or unused indexes, " +
             "parameter sniffing, the same table read repeatedly, correlated subqueries, needless DISTINCT or sorting, large table variables, long transactions and dynamic SQL built by concatenation. " +

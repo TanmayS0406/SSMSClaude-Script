@@ -519,7 +519,7 @@
                     <Button Style="{StaticResource IconButton}" ui:ButtonChrome.Icon="&#xE81C;" Command="{Binding ToggleHistoryCommand}"
                             ui:ButtonChrome.IsActive="{Binding IsHistoryOpen}" ToolTip="Chat history" />
                     <Button Style="{StaticResource IconButton}" ui:ButtonChrome.Icon="&#xE945;" Command="{Binding TuneProceduresCommand}"
-                            ToolTip="Tune procedures: pick any number of stored procedures, Claude optimizes them and opens a before / after benchmark in a new query window" />
+                            ToolTip="Tune procedures: choose a database and any number of its stored procedures, Claude optimizes them and opens a before / after benchmark in a new query window" />
                     <Button Style="{StaticResource IconButton}" ui:ButtonChrome.Icon="&#xEE94;" Command="{Binding DatabaseDiagramCommand}"
                             ToolTip="Database diagram: ER diagram of the active connection's databases, opened in your browser" />
                     <Button Style="{StaticResource IconButton}" ui:ButtonChrome.Icon="&#xE790;" Command="{Binding Appearance.ToggleCommand}"
