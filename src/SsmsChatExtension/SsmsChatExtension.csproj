@@ -131,7 +131,7 @@
     <!-- The VS SDK pins MessagePack 2.5.192 (12 advisories, CVE-2026-48109 and CVE-2026-48506 high). SSMS supplies the
          assembly at run time, so like the SDK this is compile-time only; the reference just lifts the resolved version
          to the patched release. -->
-    <PackageReference Include="MessagePack" Version="2.5.303" ExcludeAssets="runtime" />
+    <PackageReference Include="MessagePack" Version="3.1.12" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup>
     <Page Include="UI\ApprovalDialog.xaml">
